@@ -37,7 +37,7 @@ impl SoundFont {
             return Err(SoundFontError::RiffChunkNotFound);
         }
 
-        let _size = BinaryReader::read_i32(reader);
+        let _size = BinaryReader::read_i32(reader)?;
 
         let form_type = BinaryReader::read_four_cc(reader)?;
         if form_type != b"sfbk" {
