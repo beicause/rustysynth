@@ -32,11 +32,10 @@ impl Message {
 
         if command == 0xB0 {
             match loop_type {
-                MidiFileLoopType::RpgMaker => {
-                    if data1 == 111 {
+                MidiFileLoopType::RpgMaker
+                    if data1 == 111 => {
                         return Message::LoopStart;
                     }
-                }
 
                 MidiFileLoopType::IncredibleMachine => {
                     if data1 == 110 {
