@@ -8,8 +8,13 @@ use std::io::Write;
 use std::sync::Arc;
 
 fn main() {
+    print!("simple_chord...");
     simple_chord();
+    println!("OK");
+
+    print!("flourish...");
     flourish();
+    println!("OK");
 }
 
 fn simple_chord() {
