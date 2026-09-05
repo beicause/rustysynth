@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, reason = "ported crate keeps some internals unused")]
 
 use crate::loop_mode::LoopMode;
 use crate::synthesizer_settings::SynthesizerSettings;
@@ -53,7 +53,10 @@ impl Oscillator {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "oscillator needs the full parameter set"
+    )]
     pub(crate) fn start(
         &mut self,
         loop_mode: LoopMode,

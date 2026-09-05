@@ -2,7 +2,7 @@
 name = "rustysynth"
 version = "1.3.6"
 authors = ["Nobuaki Tanaka"]
-edition = "2021"
+edition = "2024"
 
 description = "A SoundFont MIDI synthesizer written in pure Rust"
 documentation = "https://docs.rs/rustysynth/latest/rustysynth/"
@@ -19,3 +19,6 @@ lewton = { version = "0.10", optional = true }
 # Enables loading of SoundFont3 (.sf3) files, whose samples are compressed
 # with Ogg Vorbis. Pulls in the pure-Rust `lewton` decoder.
 sf3 = ["dep:lewton"]
+
+[lints]
+workspace = true

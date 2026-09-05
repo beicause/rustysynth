@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, reason = "ported crate keeps some internals unused")]
 
 use std::io;
 use std::io::ErrorKind;
@@ -7,7 +7,6 @@ use std::str;
 
 use crate::four_cc::FourCC;
 
-#[allow(unused)]
 #[non_exhaustive]
 pub(crate) struct BinaryReader {}
 

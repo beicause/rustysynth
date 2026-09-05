@@ -1,10 +1,8 @@
-#![allow(dead_code)]
+#![allow(dead_code, reason = "ported crate keeps some internals unused")]
 
-#[allow(unused)]
 #[non_exhaustive]
 pub(crate) struct GeneratorType {}
 
-#[allow(unused)]
 impl GeneratorType {
     pub(crate) const START_ADDRESS_OFFSET: u16 = 0;
     pub(crate) const END_ADDRESS_OFFSET: u16 = 1;

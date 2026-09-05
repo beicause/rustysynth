@@ -8,6 +8,10 @@ members = [
 
 resolver = "2"
 
+[workspace.lints.clippy]
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+
 # Compile test binaries with opt-level 1 by default, so that the heavier
 # test data (e.g. the SoundFont3 decode of FluidR3Mono_GM.sf3) runs fast.
 [profile.test]
