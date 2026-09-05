@@ -15,11 +15,11 @@ impl Zone {
     }
 
     fn new(info: &ZoneInfo, generators: &[Generator]) -> Self {
-        let mut segment: Vec<Generator> = Vec::new();
-
-        for i in 0..info.generator_count {
-            segment.push(generators[(info.generator_index + i) as usize]);
-        }
+        // Copy the zone's generator span exactly once, with a single allocation.
+        let start = info.generator_index as usize;
+        let count = info.generator_count as usize;
+        let mut segment: Vec<Generator> = Vec::with_capacity(count);
+        segment.extend_from_slice(&generators[start..start + count]);
 
         Self {
             generators: segment,
@@ -37,7 +37,7 @@ impl Zone {
         // The last one is the terminator.
         let count = infos.len() - 1;
 
-        let mut zones: Vec<Zone> = Vec::new();
+        let mut zones: Vec<Zone> = Vec::with_capacity(count);
         for info in infos.iter().take(count) {
             zones.push(Zone::new(info, generators));
         }

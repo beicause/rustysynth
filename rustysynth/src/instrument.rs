@@ -46,7 +46,7 @@ impl Instrument {
         // The last one is the terminator.
         let count = infos.len() - 1;
 
-        let mut instruments: Vec<Instrument> = Vec::new();
+        let mut instruments: Vec<Instrument> = Vec::with_capacity(count);
         for (instrument_id, info) in infos.iter().take(count).enumerate() {
             instruments.push(Instrument::new(info, instrument_id, zones, samples)?);
         }

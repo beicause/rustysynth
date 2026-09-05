@@ -101,7 +101,7 @@ impl InstrumentRegion {
 
             // The global zone is regarded as the base setting of subsequent zones.
             let count = zones.len() - 1;
-            let mut regions: Vec<InstrumentRegion> = Vec::new();
+            let mut regions: Vec<InstrumentRegion> = Vec::with_capacity(count);
             for i in 0..count {
                 regions.push(InstrumentRegion::new(
                     instrument_id,
@@ -115,7 +115,7 @@ impl InstrumentRegion {
         } else {
             // No global zone.
             let count = zones.len();
-            let mut regions: Vec<InstrumentRegion> = Vec::new();
+            let mut regions: Vec<InstrumentRegion> = Vec::with_capacity(count);
             for zone in zones.iter().take(count) {
                 regions.push(InstrumentRegion::new(
                     instrument_id,

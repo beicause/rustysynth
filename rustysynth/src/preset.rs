@@ -59,7 +59,7 @@ impl Preset {
         // The last one is the terminator.
         let count = infos.len() - 1;
 
-        let mut presets: Vec<Preset> = Vec::new();
+        let mut presets: Vec<Preset> = Vec::with_capacity(count);
         for (preset_id, info) in infos.iter().take(count).enumerate() {
             presets.push(Preset::new(info, preset_id, zones, instruments)?);
         }

@@ -132,8 +132,8 @@ impl MidiFile {
         let track_count = BinaryReader::read_i16_big_endian(reader)? as i32;
         let resolution = BinaryReader::read_i16_big_endian(reader)? as i32;
 
-        let mut message_lists: Vec<Vec<Message>> = Vec::new();
-        let mut tick_lists: Vec<Vec<i32>> = Vec::new();
+        let mut message_lists: Vec<Vec<Message>> = Vec::with_capacity(track_count.max(0) as usize);
+        let mut tick_lists: Vec<Vec<i32>> = Vec::with_capacity(track_count.max(0) as usize);
 
         for _i in 0..track_count {
             let (message_list, tick_list) = MidiFile::read_track(reader, loop_type)?;
@@ -275,8 +275,10 @@ impl MidiFile {
         tick_lists: &[Vec<i32>],
         resolution: i32,
     ) -> (Vec<Message>, Vec<f64>) {
-        let mut merged_messages: Vec<Message> = Vec::new();
-        let mut merged_times: Vec<f64> = Vec::new();
+        // Every merged message corresponds to one entry in one of the tick lists.
+        let total_messages: usize = tick_lists.iter().map(Vec::len).sum();
+        let mut merged_messages: Vec<Message> = Vec::with_capacity(total_messages);
+        let mut merged_times: Vec<f64> = Vec::with_capacity(total_messages);
 
         let mut indices: Vec<usize> = vec![0; message_lists.len()];
 

@@ -1,7 +1,7 @@
+use std::cmp;
 use std::io;
 use std::io::ErrorKind;
 use std::io::Read;
-use std::str;
 
 use crate::four_cc::FourCC;
 
@@ -93,7 +93,7 @@ impl BinaryReader {
         reader.read_exact(&mut data)?;
 
         let mut actual_length: usize = 0;
-        for value in &mut data {
+        for value in &data {
             if *value == 0 {
                 break;
             }
@@ -108,12 +108,24 @@ impl BinaryReader {
             }
         }
 
-        Ok(str::from_utf8(&data[0..actual_length]).unwrap().to_string())
+        data.truncate(actual_length);
+
+        // Every byte is a valid ASCII character now (9..=126 or '?'), so this cannot fail.
+        Ok(String::from_utf8(data).unwrap())
     }
 
-    pub(crate) fn discard_data<R: Read>(reader: &mut R, size: usize) -> Result<(), io::Error> {
-        let mut data: Vec<u8> = vec![0; size];
-        reader.read_exact(&mut data)
+    pub(crate) fn discard_data<R: Read>(reader: &mut R, mut size: usize) -> Result<(), io::Error> {
+        // Read into a small stack buffer instead of allocating a Vec of the full size
+        // just to throw the bytes away.
+        let mut data: [u8; 4096] = [0; 4096];
+
+        while size > 0 {
+            let chunk = cmp::min(size, data.len());
+            reader.read_exact(&mut data[..chunk])?;
+            size -= chunk;
+        }
+
+        Ok(())
     }
 
     /// Reads a chunk of raw bytes as-is.

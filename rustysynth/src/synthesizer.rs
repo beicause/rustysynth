@@ -81,7 +81,7 @@ impl Synthesizer {
             }
         }
 
-        let mut channels: Vec<Channel> = Vec::new();
+        let mut channels: Vec<Channel> = Vec::with_capacity(Synthesizer::CHANNEL_COUNT);
         for i in 0..Synthesizer::CHANNEL_COUNT {
             channels.push(Channel::new(i == Synthesizer::PERCUSSION_CHANNEL));
         }
