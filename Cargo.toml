@@ -1,9 +1,8 @@
 [workspace]
-
 members = [
-    "example",
-    "rustysynth",
-    "rustysynth_test",
+  "example",
+  "rustysynth",
+  "rustysynth_test",
 ]
 
 resolver = "2"
