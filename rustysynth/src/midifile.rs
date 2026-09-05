@@ -1,12 +1,12 @@
-#![allow(dead_code)]
+#![allow(dead_code, reason = "ported crate keeps some internals unused")]
 
 use std::io::Read;
 
+use crate::MidiFileError;
+use crate::MidiFileLoopType;
 use crate::binary_reader::BinaryReader;
 use crate::four_cc::FourCC;
 use crate::read_counter::ReadCounter;
-use crate::MidiFileError;
-use crate::MidiFileLoopType;
 
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
@@ -32,10 +32,9 @@ impl Message {
 
         if command == 0xB0 {
             match loop_type {
-                MidiFileLoopType::RpgMaker
-                    if data1 == 111 => {
-                        return Message::LoopStart;
-                    }
+                MidiFileLoopType::RpgMaker if data1 == 111 => {
+                    return Message::LoopStart;
+                }
 
                 MidiFileLoopType::IncredibleMachine => {
                     if data1 == 110 {

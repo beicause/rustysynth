@@ -1,7 +1,8 @@
-#![allow(dead_code)]
+#![allow(dead_code, reason = "ported crate keeps some internals unused")]
 
 use std::io::Read;
 
+use crate::LoopMode;
 use crate::binary_reader::BinaryReader;
 use crate::error::SoundFontError;
 use crate::four_cc::FourCC;
@@ -11,7 +12,6 @@ use crate::sample_header::SampleHeader;
 use crate::soundfont_info::SoundFontInfo;
 use crate::soundfont_parameters::SoundFontParameters;
 use crate::soundfont_sampledata::SoundFontSampleData;
-use crate::LoopMode;
 
 /// Reperesents a SoundFont.
 #[derive(Debug)]
@@ -324,9 +324,7 @@ mod tests {
             SoundFont::new(&mut file).unwrap()
         }
 
-        fn grouped<'a>(
-            sf: &'a SoundFont,
-        ) -> HashMap<&'a str, Vec<&'a crate::SampleHeader>> {
+        fn grouped(sf: &SoundFont) -> HashMap<&str, Vec<&crate::SampleHeader>> {
             let mut groups: HashMap<&str, Vec<&SampleHeader>> = HashMap::new();
             for header in sf.get_sample_headers() {
                 groups.entry(header.get_name()).or_default().push(header);
@@ -335,7 +333,10 @@ mod tests {
         }
 
         fn by_name_i(sf: &SoundFont) -> HashMap<&str, &crate::Instrument> {
-            sf.get_instruments().iter().map(|i| (i.get_name(), i)).collect()
+            sf.get_instruments()
+                .iter()
+                .map(|i| (i.get_name(), i))
+                .collect()
         }
 
         fn find_preset(sf: &SoundFont, bank: i32, patch: i32) -> Option<&crate::Preset> {
@@ -393,19 +394,27 @@ mod tests {
 
             for (a, b) in occurrences_2.iter().zip(&occurrences_3) {
                 assert_eq!(a.get_sample_rate(), b.get_sample_rate(), "sample '{name}'");
-                assert_eq!(a.get_original_pitch(), b.get_original_pitch(), "sample '{name}'");
-                assert_eq!(a.get_pitch_correction(), b.get_pitch_correction(), "sample '{name}'");
+                assert_eq!(
+                    a.get_original_pitch(),
+                    b.get_original_pitch(),
+                    "sample '{name}'"
+                );
+                assert_eq!(
+                    a.get_pitch_correction(),
+                    b.get_pitch_correction(),
+                    "sample '{name}'"
+                );
                 assert!(
                     (rel_loop(a, crate::SampleHeader::get_start_loop)
                         - rel_loop(b, crate::SampleHeader::get_start_loop))
-                        .abs()
+                    .abs()
                         <= TOLERANCE,
                     "sample '{name}' loop start differs by more than {TOLERANCE} frames"
                 );
                 assert!(
                     (rel_loop(a, crate::SampleHeader::get_end_loop)
                         - rel_loop(b, crate::SampleHeader::get_end_loop))
-                        .abs()
+                    .abs()
                         <= TOLERANCE,
                     "sample '{name}' loop end differs by more than {TOLERANCE} frames"
                 );
@@ -443,13 +452,21 @@ mod tests {
         let by_name_i2 = by_name_i(&sf2);
         let by_name_i3 = by_name_i(&sf3);
         assert_eq!(by_name_i2.len(), by_name_i3.len());
-        assert_eq!(by_name_i2.len(), instruments_2.len(), "duplicate instrument names");
+        assert_eq!(
+            by_name_i2.len(),
+            instruments_2.len(),
+            "duplicate instrument names"
+        );
 
         for (name, a) in &by_name_i2 {
             let b = by_name_i3
                 .get(name)
                 .unwrap_or_else(|| panic!("instrument '{name}' is missing in the sf3 build"));
-            assert_eq!(a.get_regions().len(), b.get_regions().len(), "instrument '{name}'");
+            assert_eq!(
+                a.get_regions().len(),
+                b.get_regions().len(),
+                "instrument '{name}'"
+            );
         }
 
         // ---------------- presets ----------------
@@ -461,8 +478,9 @@ mod tests {
         for preset in presets_2 {
             let bank = preset.get_bank_number();
             let patch = preset.get_patch_number();
-            let counterpart = find_preset(&sf3, bank, patch)
-                .unwrap_or_else(|| panic!("preset (bank {bank}, patch {patch}) is missing in the sf3 build"));
+            let counterpart = find_preset(&sf3, bank, patch).unwrap_or_else(|| {
+                panic!("preset (bank {bank}, patch {patch}) is missing in the sf3 build")
+            });
             assert_eq!(preset.get_name(), counterpart.get_name());
             assert_eq!(preset.get_regions().len(), counterpart.get_regions().len());
             for (ra, rb) in preset.get_regions().iter().zip(counterpart.get_regions()) {

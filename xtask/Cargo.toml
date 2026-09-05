@@ -1,9 +1,9 @@
 [package]
 name = "xtask"
 version = "0.1.0"
-edition = "2021"
-publish = false
+edition = "2024"
 description = "Development tasks: fetch the test soundfonts and regenerate the golden test data"
+publish = false
 
 [[bin]]
 name = "xtask"
@@ -14,3 +14,6 @@ rustysynth = { path = "../rustysynth", features = ["sf3"] }
 tar = "0.4.46"
 ureq = "3.4.0"
 zstd = "0.14.0"
+
+[lints]
+workspace = true

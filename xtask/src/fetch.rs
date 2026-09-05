@@ -49,7 +49,10 @@ fn fetch_fluid(samples_dir: &Path) -> Result<(), String> {
         return Ok(());
     }
     if !archive.is_file() {
-        println!("skip: '{}' not found, cannot extract FluidR3Mono_GM.sf2", archive.display());
+        println!(
+            "skip: '{}' not found, cannot extract FluidR3Mono_GM.sf2",
+            archive.display()
+        );
         return Ok(());
     }
 
@@ -65,10 +68,7 @@ fn fetch_fluid(samples_dir: &Path) -> Result<(), String> {
         println!("saved: {}", target.display());
         Ok(())
     } else {
-        Err(format!(
-            "the archive did not contain {}",
-            target.display()
-        ))
+        Err(format!("the archive did not contain {}", target.display()))
     }
 }
 

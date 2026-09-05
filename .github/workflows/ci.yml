@@ -1,0 +1,185 @@
+name: Rust CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  merge_group:
+
+concurrency:
+  group: ${{github.workflow}}-${{github.ref}}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  ANDROID_NDK_VERSION: 29.0.14206865
+  CACHE_SUFFIX: e # cache busting
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    # runtime is normally 10 seconds
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Check for typos
+        uses: crate-ci/typos@v1.48.0
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Install tombi
+        uses: tombi-toml/setup-tombi@v1.2.4
+
+      - name: Check for tombi
+        run: tombi lint --error-on-warnings; tombi format --check --diff
+
+  build:
+    needs: lint
+    name: Build ${{matrix.os}}
+    # runtime is normally 2 minutes
+    timeout-minutes: 8
+    runs-on: ${{matrix.os}}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Disable debug symbols
+        shell: bash
+        run: |
+          mkdir -p .cargo
+
+          cat <<EOF >> .cargo/config.toml
+            [profile.dev]
+            debug = false
+          EOF
+
+      - name: Install rust toolchain
+        run: |
+          rustup toolchain install stable --no-self-update --profile=minimal --component clippy
+
+      - name: Caching
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: build-${{ matrix.os }}-${{ env.CACHE_SUFFIX }}
+          env-vars: ImageVersion
+          cache-bin: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Clippy no features
+        run: cargo clippy --workspace --all-targets --no-default-features -- -Dwarnings
+
+      - name: Clippy all features
+        run: cargo clippy --workspace --all-targets --all-features -- -Dwarnings
+
+      - name: Build ${{matrix.os}}
+        run: cargo build --workspace --all-features --all-targets
+
+      - name: Fetch test soundfonts
+        # TimGM6mb.sf2 is not tracked (see .gitignore); it is downloaded
+        # by the xtask tool. The other test fonts ship with the repo.
+        run: cargo xtask fetch-sf2
+
+      - name: Test ${{matrix.os}}
+        run: cargo test --workspace --all-targets --all-features
+
+      - name: Doc
+        run: cargo doc --workspace --all-features --no-deps --document-private-items --keep-going
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  build-wasm:
+    needs: lint
+    name: Build wasm
+    # runtime is normally 30 seconds
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Disable debug symbols
+        shell: bash
+        run: |
+          mkdir -p .cargo
+
+          cat <<EOF >> .cargo/config.toml
+            [profile.dev]
+            debug = false
+          EOF
+
+      - name: Install rust toolchain
+        run: |
+          rustup toolchain install stable --no-self-update --profile=minimal --component clippy
+          rustup target add wasm32-unknown-unknown
+
+      - name: Caching
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: build-wasm-${{ matrix.os }}-${{ env.CACHE_SUFFIX }}
+          env-vars: ImageVersion
+          cache-bin: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Clippy no features
+        run: cargo clippy --workspace --all-targets --no-default-features -- -Dwarnings
+
+      - name: Clippy all features
+        run: cargo clippy --target wasm32-unknown-unknown -p rustysynth --all-targets --all-features -- -Dwarnings
+
+      - name: Build wasm
+        run: cargo build --target wasm32-unknown-unknown -p rustysynth --all-targets --all-features
+
+  build-android:
+    needs: lint
+    name: Build android
+    # runtime is normally 30 seconds
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Disable debug symbols
+        shell: bash
+        run: |
+          mkdir -p .cargo
+
+          cat <<EOF >> .cargo/config.toml
+            [profile.dev]
+            debug = false
+          EOF
+
+      - name: Install rust toolchain
+        run: |
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup target add aarch64-linux-android
+
+      - name: Caching
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: build-android-${{ matrix.os }}-${{ env.CACHE_SUFFIX }}
+          env-vars: ImageVersion
+          cache-bin: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.21.1
+
+      - name: Install Android NDK
+        run: ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager 'ndk;${{env.ANDROID_NDK_VERSION}}'
+
+      - name: Install cargo-ndk
+        run: cargo binstall cargo-ndk
+
+      - name: Build
+        run: >
+          export ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${{env.ANDROID_NDK_VERSION}}
+          && export ANDROID_NDK_ROOT=${ANDROID_NDK_HOME}
+          && cargo ndk-env -t arm64-v8a
+          && cargo ndk -t arm64-v8a -P 26 build -p rustysynth --all-features
