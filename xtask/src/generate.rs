@@ -191,7 +191,7 @@ fn common_header(font_file: &str, util: &str, test_fn: &str) -> String {
     s
 }
 
-fn emit_info_test(src: &Path, prefix: &str, font_file: &str, sf: &SoundFont) {
+fn emit_info_test(src: &Path, prefix: &str, font_file: &str, sf: &SoundFont, tolerant_sum: bool) {
     let mut s = String::new();
     s.push_str(&common_header(font_file, "", "soundfont_info"));
     let info = sf.get_info();
@@ -257,10 +257,19 @@ fn emit_info_test(src: &Path, prefix: &str, font_file: &str, sf: &SoundFont) {
     s.push_str("    for value in sf.get_wave_data().iter() {\n");
     s.push_str("        sum += *value as i32;\n");
     s.push_str("    }\n");
-    s.push_str(&format!(
-        "    assert_eq!(sum, {})",
-        sf.get_wave_data().iter().map(|v| *v as i64).sum::<i64>()
-    ));
+    let expected_sum = sf.get_wave_data().iter().map(|v| *v as i64).sum::<i64>();
+    if tolerant_sum {
+        // SoundFont3 PCM is produced by the Ogg Vorbis decoder, whose
+        // floating-point math differs slightly between toolchains (MSVC,
+        // clang, gcc), so the exact sum is not reproducible everywhere.
+        // Keep a relative tolerance that still catches corrupted decodes.
+        let bound = expected_sum / 10_000;
+        s.push_str(&format!(
+            "    assert!(\n        (sum as i64 - {expected_sum}).abs() <= {bound},\n        \"decoded PCM sum ({{sum}}) differs from the snapshot by more than 0.01%\"\n    );"
+        ));
+    } else {
+        s.push_str(&format!("    assert_eq!(sum, {expected_sum})"));
+    }
     s.push_str("\n}\n");
     write_and_format(&src.join(format!("{prefix}_info_test.rs")), &s);
 }
@@ -419,7 +428,9 @@ fn process(font_file: &str, prefix: &str) {
         &rows,
     );
 
-    emit_info_test(&src, prefix, font_file, &sf);
+    // The decoded PCM of a SoundFont3 is not bit-exact across compilers,
+    // so its sum assertion uses a relative tolerance instead of equality.
+    emit_info_test(&src, prefix, font_file, &sf, prefix == "fluidr3mono_sf3");
     emit_sample_test(&src, prefix, font_file, &sf);
     emit_instrument_test(&src, prefix, font_file, &sf);
     emit_preset_test(&src, prefix, font_file, &sf);
