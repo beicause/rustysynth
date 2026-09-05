@@ -19,5 +19,7 @@ Cargo.lock
 *.pcm
 *.mid
 
-# Used for tests
-!samples/*
+# Used for tests (keep the checked-in sample files visible; the .sf2 files
+# fetched by `cargo xtask fetch-sf2` stay ignored)
+!samples/*.sf3
+!samples/*.tar.zst
