@@ -3,10 +3,10 @@ use std::cmp;
 #[derive(Debug)]
 #[non_exhaustive]
 pub(crate) struct Reverb {
-    cfs_l: Vec<CombFilter>,
-    cfs_r: Vec<CombFilter>,
-    apfs_l: Vec<AllPassFilter>,
-    apfs_r: Vec<AllPassFilter>,
+    cfs_l: [CombFilter; 8],
+    cfs_r: [CombFilter; 8],
+    apfs_l: [AllPassFilter; 4],
+    apfs_r: [AllPassFilter; 4],
 
     gain: f32,
     room_size: f32,
@@ -31,67 +31,43 @@ impl Reverb {
     const INITIAL_WIDTH: f32 = 1.0;
     const STEREO_SPREAD: usize = 23;
 
-    const CF_TUNING_L1: usize = 1116;
-    const CF_TUNING_R1: usize = 1116 + Reverb::STEREO_SPREAD;
-    const CF_TUNING_L2: usize = 1188;
-    const CF_TUNING_R2: usize = 1188 + Reverb::STEREO_SPREAD;
-    const CF_TUNING_L3: usize = 1277;
-    const CF_TUNING_R3: usize = 1277 + Reverb::STEREO_SPREAD;
-    const CF_TUNING_L4: usize = 1356;
-    const CF_TUNING_R4: usize = 1356 + Reverb::STEREO_SPREAD;
-    const CF_TUNING_L5: usize = 1422;
-    const CF_TUNING_R5: usize = 1422 + Reverb::STEREO_SPREAD;
-    const CF_TUNING_L6: usize = 1491;
-    const CF_TUNING_R6: usize = 1491 + Reverb::STEREO_SPREAD;
-    const CF_TUNING_L7: usize = 1557;
-    const CF_TUNING_R7: usize = 1557 + Reverb::STEREO_SPREAD;
-    const CF_TUNING_L8: usize = 1617;
-    const CF_TUNING_R8: usize = 1617 + Reverb::STEREO_SPREAD;
-    const APF_TUNING_L1: usize = 556;
-    const APF_TUNING_R1: usize = 556 + Reverb::STEREO_SPREAD;
-    const APF_TUNING_L2: usize = 441;
-    const APF_TUNING_R2: usize = 441 + Reverb::STEREO_SPREAD;
-    const APF_TUNING_L3: usize = 341;
-    const APF_TUNING_R3: usize = 341 + Reverb::STEREO_SPREAD;
-    const APF_TUNING_L4: usize = 225;
-    const APF_TUNING_R4: usize = 225 + Reverb::STEREO_SPREAD;
+    const CF_TUNING_L: [usize; 8] = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
+    const CF_TUNING_R: [usize; 8] = [
+        Self::CF_TUNING_L[0] + Reverb::STEREO_SPREAD,
+        Self::CF_TUNING_L[1] + Reverb::STEREO_SPREAD,
+        Self::CF_TUNING_L[2] + Reverb::STEREO_SPREAD,
+        Self::CF_TUNING_L[3] + Reverb::STEREO_SPREAD,
+        Self::CF_TUNING_L[4] + Reverb::STEREO_SPREAD,
+        Self::CF_TUNING_L[5] + Reverb::STEREO_SPREAD,
+        Self::CF_TUNING_L[6] + Reverb::STEREO_SPREAD,
+        Self::CF_TUNING_L[7] + Reverb::STEREO_SPREAD,
+    ];
+    const APF_TUNING_L: [usize; 4] = [556, 441, 341, 225];
+    const APF_TUNING_R: [usize; 4] = [
+        Self::APF_TUNING_L[0] + Reverb::STEREO_SPREAD,
+        Self::APF_TUNING_L[1] + Reverb::STEREO_SPREAD,
+        Self::APF_TUNING_L[2] + Reverb::STEREO_SPREAD,
+        Self::APF_TUNING_L[3] + Reverb::STEREO_SPREAD,
+    ];
 
     pub(crate) fn new(sample_rate: i32) -> Self {
-        let cfs_l: Vec<CombFilter> = vec![
-            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_L1)),
-            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_L2)),
-            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_L3)),
-            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_L4)),
-            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_L5)),
-            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_L6)),
-            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_L7)),
-            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_L8)),
-        ];
+        // The filter bank sizes are fixed at compile time, so use arrays
+        // instead of heap-allocated vectors.
+        let cfs_l: [CombFilter; 8] = std::array::from_fn(|i| {
+            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_L[i]))
+        });
 
-        let cfs_r: Vec<CombFilter> = vec![
-            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_R1)),
-            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_R2)),
-            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_R3)),
-            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_R4)),
-            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_R5)),
-            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_R6)),
-            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_R7)),
-            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_R8)),
-        ];
+        let cfs_r: [CombFilter; 8] = std::array::from_fn(|i| {
+            CombFilter::new(Reverb::scale_tuning(sample_rate, Reverb::CF_TUNING_R[i]))
+        });
 
-        let mut apfs_l: Vec<AllPassFilter> = vec![
-            AllPassFilter::new(Reverb::scale_tuning(sample_rate, Reverb::APF_TUNING_L1)),
-            AllPassFilter::new(Reverb::scale_tuning(sample_rate, Reverb::APF_TUNING_L2)),
-            AllPassFilter::new(Reverb::scale_tuning(sample_rate, Reverb::APF_TUNING_L3)),
-            AllPassFilter::new(Reverb::scale_tuning(sample_rate, Reverb::APF_TUNING_L4)),
-        ];
+        let mut apfs_l: [AllPassFilter; 4] = std::array::from_fn(|i| {
+            AllPassFilter::new(Reverb::scale_tuning(sample_rate, Reverb::APF_TUNING_L[i]))
+        });
 
-        let mut apfs_r: Vec<AllPassFilter> = vec![
-            AllPassFilter::new(Reverb::scale_tuning(sample_rate, Reverb::APF_TUNING_R1)),
-            AllPassFilter::new(Reverb::scale_tuning(sample_rate, Reverb::APF_TUNING_R2)),
-            AllPassFilter::new(Reverb::scale_tuning(sample_rate, Reverb::APF_TUNING_R3)),
-            AllPassFilter::new(Reverb::scale_tuning(sample_rate, Reverb::APF_TUNING_R4)),
-        ];
+        let mut apfs_r: [AllPassFilter; 4] = std::array::from_fn(|i| {
+            AllPassFilter::new(Reverb::scale_tuning(sample_rate, Reverb::APF_TUNING_R[i]))
+        });
 
         for apf in apfs_l.iter_mut() {
             apf.set_feedback(0.5_f32);

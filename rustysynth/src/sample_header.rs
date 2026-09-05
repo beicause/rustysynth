@@ -56,7 +56,7 @@ impl SampleHeader {
 
         let count = size / 46 - 1;
 
-        let mut headers: Vec<SampleHeader> = Vec::new();
+        let mut headers: Vec<SampleHeader> = Vec::with_capacity(count);
         for _i in 0..count {
             headers.push(SampleHeader::new(reader)?);
         }

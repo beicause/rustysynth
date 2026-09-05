@@ -12,7 +12,7 @@ pub(crate) struct VoiceCollection {
 
 impl VoiceCollection {
     pub(crate) fn new(settings: &SynthesizerSettings) -> Self {
-        let mut voices: Vec<Voice> = Vec::new();
+        let mut voices: Vec<Voice> = Vec::with_capacity(settings.maximum_polyphony);
         for _i in 0..settings.maximum_polyphony {
             voices.push(Voice::new(settings));
         }

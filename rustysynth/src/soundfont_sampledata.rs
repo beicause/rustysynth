@@ -83,12 +83,15 @@ impl SoundFontSampleData {
         }
 
         // SoundFont2: the sample data is raw little-endian 16-bit PCM.
-        let wave_data: Vec<i16> = sample_data
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|bytes| i16::from_le_bytes(*bytes))
-            .collect();
+        // The output size is known, so allocate exactly once.
+        let mut wave_data: Vec<i16> = Vec::with_capacity(sample_data.len() / 2);
+        wave_data.extend(
+            sample_data
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|bytes| i16::from_le_bytes(*bytes)),
+        );
 
         if wave_data.len() < 2 {
             return Err(SoundFontError::SampleDataNotFound);

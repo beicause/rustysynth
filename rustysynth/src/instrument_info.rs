@@ -32,7 +32,7 @@ impl InstrumentInfo {
 
         let count = size / 22;
 
-        let mut instruments: Vec<InstrumentInfo> = Vec::new();
+        let mut instruments: Vec<InstrumentInfo> = Vec::with_capacity(count);
         for _i in 0..count {
             instruments.push(InstrumentInfo::new(reader)?);
         }

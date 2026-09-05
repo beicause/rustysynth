@@ -70,7 +70,7 @@ impl PresetRegion {
 
             // The global zone is regarded as the base setting of subsequent zones.
             let count = zones.len() - 1;
-            let mut regions: Vec<PresetRegion> = Vec::new();
+            let mut regions: Vec<PresetRegion> = Vec::with_capacity(count);
             for i in 0..count {
                 regions.push(PresetRegion::new(
                     preset_id,
@@ -84,7 +84,7 @@ impl PresetRegion {
         } else {
             // No global zone.
             let count = zones.len();
-            let mut regions: Vec<PresetRegion> = Vec::new();
+            let mut regions: Vec<PresetRegion> = Vec::with_capacity(count);
             for zone in zones.iter().take(count) {
                 regions.push(PresetRegion::new(
                     preset_id,
