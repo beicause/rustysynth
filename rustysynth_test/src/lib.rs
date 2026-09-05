@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 mod instrument_util;
 mod preset_util;
 mod sample_util;

@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "port keeps unimplemented helpers")]
-
 #[non_exhaustive]
 pub(crate) struct ArrayMath {}
 

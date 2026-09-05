@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "ported crate keeps some internals unused")]
-
 use crate::lfo::Lfo;
 use crate::modulation_envelope::ModulationEnvelope;
 use crate::oscillator::Oscillator;

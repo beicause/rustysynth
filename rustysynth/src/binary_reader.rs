@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "ported crate keeps some internals unused")]
-
 use std::io;
 use std::io::ErrorKind;
 use std::io::Read;

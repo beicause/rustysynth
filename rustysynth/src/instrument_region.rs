@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "ported crate keeps some internals unused")]
-
 use crate::error::SoundFontError;
 use crate::generator::Generator;
 use crate::generator_type::GeneratorType;
