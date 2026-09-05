@@ -8,3 +8,8 @@ publish = false
 
 [dependencies]
 rustysynth = { path = "../rustysynth" }
+
+[features]
+# Adds the SoundFont3 snapshot tests, which load and decode
+# FluidR3Mono_GM.sf3 through the `sf3` feature of rustysynth.
+sf3 = ["rustysynth/sf3"]
