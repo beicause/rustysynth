@@ -3,7 +3,6 @@
 use std::io;
 use std::io::ErrorKind;
 use std::io::Read;
-use std::slice;
 use std::str;
 
 use crate::four_cc::FourCC;
@@ -120,17 +119,18 @@ impl BinaryReader {
         reader.read_exact(&mut data)
     }
 
-    pub(crate) fn read_wave_data<R: Read>(
+    /// Reads a chunk of raw bytes as-is.
+    ///
+    /// The sample data of a SoundFont2 is little-endian 16-bit PCM, while a
+    /// SoundFont3 stores Ogg Vorbis streams instead, so the sample data chunk
+    /// is read as raw bytes and interpreted later. Reading raw bytes also
+    /// keeps odd-sized chunks (legal in SoundFont3) safe.
+    pub(crate) fn read_raw_data<R: Read>(
         reader: &mut R,
         size: usize,
-    ) -> Result<Vec<i16>, io::Error> {
-        let length = size / 2;
-        let mut samples: Vec<i16> = vec![0; length];
-
-        let ptr = samples.as_mut_ptr() as *mut u8;
-        let data = unsafe { slice::from_raw_parts_mut(ptr, size) };
-        reader.read_exact(data)?;
-
-        Ok(samples)
+    ) -> Result<Vec<u8>, io::Error> {
+        let mut data: Vec<u8> = vec![0; size];
+        reader.read_exact(&mut data)?;
+        Ok(data)
     }
 }

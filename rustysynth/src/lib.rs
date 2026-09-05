@@ -20,6 +20,8 @@ mod soundfont_info;
 mod soundfont_math;
 mod soundfont_parameters;
 mod soundfont_sampledata;
+#[cfg(feature = "sf3")]
+mod soundfont_sf3;
 mod soundfont_version;
 mod zone;
 mod zone_info;

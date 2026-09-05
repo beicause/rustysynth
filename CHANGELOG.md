@@ -1,3 +1,7 @@
+# Unreleased
+
+- Added optional SoundFont3 (SF3) support behind the `sf3` cargo feature, using the pure-Rust `lewton` Ogg Vorbis decoder.
+
 # v1.3.6
 
 - Various code clean-ups ([thanks to @sevonj](https://github.com/sinshu/rustysynth/issues/42)).
