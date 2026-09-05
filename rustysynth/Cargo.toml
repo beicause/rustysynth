@@ -9,13 +9,13 @@ documentation = "https://docs.rs/rustysynth/latest/rustysynth/"
 readme = "README.md"
 repository = "https://github.com/sinshu/rustysynth"
 license = "MIT"
-keywords = ["soundfont", "midi", "synthesizer", "audio", "music"]
+keywords = ["audio", "midi", "music", "soundfont", "synthesizer"]
 categories = ["multimedia::audio"]
+
+[dependencies]
+lewton = { version = "0.10", optional = true }
 
 [features]
 # Enables loading of SoundFont3 (.sf3) files, whose samples are compressed
 # with Ogg Vorbis. Pulls in the pure-Rust `lewton` decoder.
 sf3 = ["dep:lewton"]
-
-[dependencies]
-lewton = { version = "0.10", optional = true }
