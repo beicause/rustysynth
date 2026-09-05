@@ -10,6 +10,20 @@ RustySynth is a SoundFont MIDI synthesizer written in pure Rust, ported from [Me
 * Supports standard MIDI files with additional features including dynamic tempo changing.
 * No dependencies other than the standard library.
 
+## SoundFont3 (SF3)
+
+SF3 SoundFonts store their samples as Ogg Vorbis streams instead of raw PCM,
+roughly 10x smaller than the equivalent SF2. Loading them is opt-in because it
+adds the pure-Rust [`lewton`](https://crates.io/crates/lewton) decoder:
+
+```
+cargo add rustysynth --features sf3
+```
+
+With the `sf3` feature enabled, `SoundFont::new` loads `.sf3` files
+transparently, decompressing every sample into the same 16-bit PCM layout used
+by `.sf2` files.
+
 
 
 ## Examples

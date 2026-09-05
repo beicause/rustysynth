@@ -12,6 +12,7 @@ use crate::preset::Preset;
 use crate::preset_info::PresetInfo;
 use crate::read_counter::ReadCounter;
 use crate::sample_header::SampleHeader;
+use crate::soundfont_sampledata::SoundFontSampleData;
 use crate::zone::Zone;
 use crate::zone_info::ZoneInfo;
 
@@ -23,7 +24,16 @@ pub(crate) struct SoundFontParameters {
 }
 
 impl SoundFontParameters {
-    pub(crate) fn new<R: Read>(reader: &mut R) -> Result<Self, SoundFontError> {
+    /// Reads the `pdta` LIST chunk and builds the parameters.
+    ///
+    /// The raw sample bytes are decoded before the instrument regions are
+    /// built: for a SoundFont3 this decompresses the Ogg Vorbis samples and
+    /// rewrites the sample headers, and the regions copy the corrected sample
+    /// offsets when they are created.
+    pub(crate) fn load<R: Read>(
+        reader: &mut R,
+        sample_data: Vec<u8>,
+    ) -> Result<(Self, SoundFontSampleData), SoundFontError> {
         let chunk_id = BinaryReader::read_four_cc(reader)?;
         if chunk_id != b"LIST" {
             return Err(SoundFontError::ListChunkNotFound);
@@ -90,9 +100,11 @@ impl SoundFontParameters {
             SoundFontError::SubChunkNotFound(FourCC::from_bytes(*b"IGEN")),
         )?;
 
-        let sample_headers = sample_headers.ok_or(SoundFontError::SubChunkNotFound(
+        let mut sample_headers = sample_headers.ok_or(SoundFontError::SubChunkNotFound(
             FourCC::from_bytes(*b"SHDR"),
         ))?;
+
+        let sample_data = SoundFontSampleData::new(sample_data, &mut sample_headers)?;
 
         let instrument_zones = Zone::create(&instrument_bag, &instrument_generators)?;
         let instruments =
@@ -101,10 +113,13 @@ impl SoundFontParameters {
         let preset_zones = Zone::create(&preset_bag, &preset_generators)?;
         let presets = Preset::create(&preset_infos, &preset_zones, &instruments)?;
 
-        Ok(Self {
-            sample_headers,
-            presets,
-            instruments,
-        })
+        Ok((
+            Self {
+                sample_headers,
+                presets,
+                instruments,
+            },
+            sample_data,
+        ))
     }
 }
