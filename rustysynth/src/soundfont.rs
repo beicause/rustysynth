@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "ported crate keeps some internals unused")]
-
 use std::io::Read;
 
 use crate::LoopMode;
@@ -13,7 +11,7 @@ use crate::soundfont_info::SoundFontInfo;
 use crate::soundfont_parameters::SoundFontParameters;
 use crate::soundfont_sampledata::SoundFontSampleData;
 
-/// Reperesents a SoundFont.
+/// Represents a SoundFont.
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct SoundFont {

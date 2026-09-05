@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "ported crate keeps some internals unused")]
-
 use crate::channel::Channel;
 use crate::instrument_region::InstrumentRegion;
 use crate::synthesizer_settings::SynthesizerSettings;

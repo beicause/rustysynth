@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "ported crate keeps some internals unused")]
-
 use std::f64::consts;
 
 #[derive(Debug)]

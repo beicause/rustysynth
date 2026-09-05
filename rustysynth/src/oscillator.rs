@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "ported crate keeps some internals unused")]
-
 use crate::loop_mode::LoopMode;
 use crate::synthesizer_settings::SynthesizerSettings;
 

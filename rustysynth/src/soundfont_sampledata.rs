@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "ported crate keeps some internals unused")]
-
 use std::io::Read;
 
 use crate::binary_reader::BinaryReader;
@@ -61,7 +59,6 @@ impl SoundFontSampleData {
     /// the streams concatenated in the `smpl` chunk (identified by the `OggS`
     /// magic); those are decompressed here, which also rewrites `sample_headers`
     /// so that they reference the decoded data instead of the compressed bytes.
-    #[cfg_attr(not(feature = "sf3"), allow(unused_variables))]
     pub(crate) fn new(
         sample_data: Vec<u8>,
         sample_headers: &mut [SampleHeader],
@@ -69,7 +66,10 @@ impl SoundFontSampleData {
         // SoundFont3 compressed samples start with the "OggS" magic.
         if sample_data.len() >= 4 && &sample_data[..4] == b"OggS" {
             #[cfg(not(feature = "sf3"))]
-            return Err(SoundFontError::UnsupportedSampleFormat);
+            {
+                let _ = sample_headers;
+                return Err(SoundFontError::UnsupportedSampleFormat);
+            }
 
             #[cfg(feature = "sf3")]
             {

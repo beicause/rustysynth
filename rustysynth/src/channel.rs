@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "ported crate keeps some internals unused")]
-
 #[derive(Debug, PartialEq, Eq)]
 enum DataType {
     None,

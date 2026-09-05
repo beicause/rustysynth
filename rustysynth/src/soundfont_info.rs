@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "ported crate keeps some internals unused")]
-
 use std::io::Read;
 
 use crate::binary_reader::BinaryReader;
@@ -139,7 +137,7 @@ impl SoundFontInfo {
         &self.creation_date
     }
 
-    /// Gets the auther of the SoundFont.
+    /// Gets the author of the SoundFont.
     pub fn get_author(&self) -> &str {
         &self.author
     }

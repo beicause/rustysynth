@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "ported crate keeps some internals unused")]
-
 use crate::error::SynthesizerError;
 
 /// Specifies a set of parameters for synthesis.

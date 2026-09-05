@@ -1,11 +1,9 @@
-#![allow(dead_code, reason = "ported crate keeps some internals unused")]
-
 use std::io;
 use std::io::Read;
 
 use crate::binary_reader::BinaryReader;
 
-/// Reperesents the version of a SoundFont.
+/// Represents the version of a SoundFont.
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct SoundFontVersion {

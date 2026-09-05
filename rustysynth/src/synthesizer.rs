@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "ported crate keeps some internals unused")]
-
 use std::cmp;
 use std::collections::HashMap;
 use std::sync::Arc;

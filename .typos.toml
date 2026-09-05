@@ -1,0 +1,4 @@
+# crate-ci/typos configuration (used by the CI lint job).
+[default]
+# "ArthurCose" is a GitHub handle in the CHANGELOG, not a misspelling of "case".
+extend-ignore-re = ["ArthurCose"]

@@ -1,6 +1,3 @@
-#![allow(dead_code, reason = "ported crate keeps some internals unused")]
-#![allow(unused_imports, reason = "test utilities use a subset of imports")]
-
 use rustysynth::PresetRegion;
 
 fn are_equal(x: f64, y: f64) -> bool {

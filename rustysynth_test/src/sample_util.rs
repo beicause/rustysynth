@@ -1,6 +1,3 @@
-#![allow(dead_code, reason = "ported crate keeps some internals unused")]
-#![allow(unused_imports, reason = "test utilities use a subset of imports")]
-
 use rustysynth::SampleHeader;
 
 pub fn check(sample: &SampleHeader, values: &[i32; 7]) {

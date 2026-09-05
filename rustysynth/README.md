@@ -109,7 +109,7 @@ sequencer.render(&mut left[..], &mut right[..]);
 * __Other things__
     - [x] Standard MIDI file support
     - [x] MIDI file loop extension support
-    - [x] Performace optimization
+    - [x] Performance optimization
 
 
 
