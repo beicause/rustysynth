@@ -6,7 +6,7 @@ use crate::binary_reader::BinaryReader;
 use crate::four_cc::FourCC;
 use crate::read_counter::ReadCounter;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub(crate) enum Message {
     Normal { status: u8, data1: u8, data2: u8 },
@@ -129,11 +129,26 @@ impl MidiFile {
             return Err(MidiFileError::UnsupportedFormat(format));
         }
 
-        let track_count = BinaryReader::read_i16_big_endian(reader)? as i32;
-        let resolution = BinaryReader::read_i16_big_endian(reader)? as i32;
+        // The SMF specification requires at least one track chunk.
+        let track_count = BinaryReader::read_i16_big_endian(reader)?;
+        if track_count <= 0 {
+            return Err(MidiFileError::InvalidChunkData(FourCC::from_bytes(
+                *b"MThd",
+            )));
+        }
 
-        let mut message_lists: Vec<Vec<Message>> = Vec::with_capacity(track_count.max(0) as usize);
-        let mut tick_lists: Vec<Vec<i32>> = Vec::with_capacity(track_count.max(0) as usize);
+        // The time division must be a positive number of ticks per quarter
+        // note. SMPTE timecode divisions are encoded with bit 15 set (i.e. a
+        // negative value here) and are not supported.
+        let resolution = BinaryReader::read_i16_big_endian(reader)?;
+        if resolution <= 0 {
+            return Err(MidiFileError::InvalidTimeDivision(resolution));
+        }
+        let track_count = track_count as i32;
+        let resolution = resolution as i32;
+
+        let mut message_lists: Vec<Vec<Message>> = Vec::with_capacity(track_count as usize);
+        let mut tick_lists: Vec<Vec<i32>> = Vec::with_capacity(track_count as usize);
 
         for _i in 0..track_count {
             let (message_list, tick_list) = MidiFile::read_track(reader, loop_type)?;
@@ -266,7 +281,9 @@ impl MidiFile {
                 }
             }
 
-            last_status = first
+            // Per the SMF specification, only channel messages update the
+            // running status byte; SysEx and Meta events interrupt (clear) it.
+            last_status = if first >= 0xF0 { 0 } else { first };
         }
     }
 
@@ -315,7 +332,11 @@ impl MidiFile {
             let message = message_lists[min_index as usize][indices[min_index as usize]];
             if let Message::TempoChange { bytes } = message {
                 let tempo_i32 = i32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]]);
-                tempo = 60000000.0 / tempo_i32 as f64;
+                // A tempo of 0 microseconds per quarter note is invalid data;
+                // keep the previous tempo instead of dividing by zero.
+                if tempo_i32 > 0 {
+                    tempo = 60000000.0 / tempo_i32 as f64;
+                }
             } else {
                 merged_messages.push(message);
                 merged_times.push(current_time);
@@ -329,7 +350,7 @@ impl MidiFile {
 
     /// Get the length of the MIDI file in seconds.
     pub fn get_length(&self) -> f64 {
-        *self.times.last().unwrap()
+        self.times.last().copied().unwrap_or(0.0)
     }
 }
 
@@ -341,5 +362,238 @@ mod tests {
     fn test_message_size() {
         // Avoid increasing the size of the Message type
         assert_eq!(size_of::<Message>(), 4);
+    }
+
+    /// Encodes a value as a MIDI variable-length quantity.
+    fn vlq(mut value: u32) -> Vec<u8> {
+        let mut groups = Vec::new();
+        loop {
+            groups.push((value & 0x7F) as u8);
+            value >>= 7;
+            if value == 0 {
+                break;
+            }
+        }
+        groups.reverse();
+        let last = groups.len() - 1;
+        for (i, byte) in groups.iter_mut().enumerate() {
+            if i != last {
+                *byte |= 0x80;
+            }
+        }
+        groups
+    }
+
+    /// Builds an `MThd` header chunk.
+    fn mthd(format: u16, track_count: u16, resolution: u16) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"MThd");
+        bytes.extend_from_slice(&6u32.to_be_bytes());
+        bytes.extend_from_slice(&format.to_be_bytes());
+        bytes.extend_from_slice(&track_count.to_be_bytes());
+        bytes.extend_from_slice(&resolution.to_be_bytes());
+        bytes
+    }
+
+    /// Appends an `MTrk` chunk with the given event data.
+    fn mtrk(bytes: &mut Vec<u8>, data: &[u8]) {
+        bytes.extend_from_slice(b"MTrk");
+        bytes.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(data);
+    }
+
+    // Events: delta 480: note on (60, 100); delta 480: end of track.
+    // PPQ 480 at the default 120 BPM: 480 ticks = 0.5 s.
+    fn note_at_480() -> Vec<u8> {
+        let mut data = mthd(0, 1, 480);
+        let mut track = vlq(480);
+        track.extend_from_slice(&[0x90, 0x3C, 0x64]);
+        track.extend_from_slice(&vlq(480));
+        track.extend_from_slice(&[0xFF, 0x2F, 0x00]);
+        mtrk(&mut data, &track);
+        data
+    }
+
+    fn assert_close(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 1e-6,
+            "expected {expected}, but was {actual}"
+        );
+    }
+
+    #[test]
+    fn test_default_tempo_timing() {
+        let data = note_at_480();
+        let midi = MidiFile::new(&mut data.as_slice()).unwrap();
+
+        assert_eq!(midi.messages.len(), 2);
+        assert_eq!(
+            midi.messages[0],
+            Message::Normal {
+                status: 0x90,
+                data1: 0x3C,
+                data2: 0x64,
+            }
+        );
+        assert_eq!(midi.messages[1], Message::EndOfTrack);
+        assert_eq!(midi.times.len(), 2);
+        assert_close(midi.times[0], 0.5);
+        assert_close(midi.times[1], 1.0);
+        assert_close(midi.get_length(), 1.0);
+    }
+
+    #[test]
+    fn test_tempo_change_timing() {
+        // Tempo change to 250000 us/quarter = 240 BPM at tick 0, then a note
+        // at tick 480 (0.25 s at 240 BPM) and EOT at tick 960 (0.5 s).
+        let mut data = mthd(0, 1, 480);
+        let mut track = vlq(0);
+        track.extend_from_slice(&[0xFF, 0x51, 0x03, 0x03, 0xD0, 0x90]);
+        track.extend_from_slice(&vlq(480));
+        track.extend_from_slice(&[0x90, 0x3C, 0x64]);
+        track.extend_from_slice(&vlq(480));
+        track.extend_from_slice(&[0xFF, 0x2F, 0x00]);
+        mtrk(&mut data, &track);
+
+        let midi = MidiFile::new(&mut data.as_slice()).unwrap();
+
+        // The tempo change is consumed during the merge and not emitted.
+        assert_eq!(midi.messages.len(), 2);
+        assert_close(midi.times[0], 0.25);
+        assert_close(midi.times[1], 0.5);
+        assert_close(midi.get_length(), 0.5);
+    }
+
+    #[test]
+    fn test_invalid_tempo_value_is_ignored() {
+        // A tempo of 0 us/quarter is invalid; the previous tempo (the 120 BPM
+        // default) must be kept, so timing stays intact instead of collapsing.
+        let mut data = mthd(0, 1, 480);
+        let mut track = vlq(0);
+        track.extend_from_slice(&[0xFF, 0x51, 0x03, 0x00, 0x00, 0x00]);
+        track.extend_from_slice(&vlq(480));
+        track.extend_from_slice(&[0x90, 0x3C, 0x64]);
+        track.extend_from_slice(&vlq(480));
+        track.extend_from_slice(&[0xFF, 0x2F, 0x00]);
+        mtrk(&mut data, &track);
+
+        let midi = MidiFile::new(&mut data.as_slice()).unwrap();
+        assert_eq!(midi.messages.len(), 2);
+        assert_close(midi.times[0], 0.5);
+        assert_close(midi.times[1], 1.0);
+    }
+
+    #[test]
+    fn test_running_status_within_channel_messages() {
+        // Three note-on events in a row using running status.
+        let mut data = mthd(0, 1, 480);
+        let mut track = vlq(0);
+        track.extend_from_slice(&[0x90, 0x3C, 0x64]); // full status
+        track.extend_from_slice(&vlq(0));
+        track.extend_from_slice(&[0x3D, 0x60]); // running status
+        track.extend_from_slice(&vlq(0));
+        track.extend_from_slice(&[0x3E, 0x50]); // running status
+        track.extend_from_slice(&vlq(0));
+        track.extend_from_slice(&[0xFF, 0x2F, 0x00]);
+        mtrk(&mut data, &track);
+
+        let midi = MidiFile::new(&mut data.as_slice()).unwrap();
+        assert_eq!(
+            midi.messages,
+            vec![
+                Message::Normal {
+                    status: 0x90,
+                    data1: 0x3C,
+                    data2: 0x64,
+                },
+                Message::Normal {
+                    status: 0x90,
+                    data1: 0x3D,
+                    data2: 0x60,
+                },
+                Message::Normal {
+                    status: 0x90,
+                    data1: 0x3E,
+                    data2: 0x50,
+                },
+                Message::EndOfTrack,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_running_status_cleared_by_meta_event() {
+        // Per the SMF specification, Meta events interrupt (clear) running
+        // status, so the data byte after the tempo event must not reuse the
+        // previous channel status. It is parsed with status 0 instead.
+        let mut data = mthd(0, 1, 480);
+        let mut track = vlq(0);
+        track.extend_from_slice(&[0x90, 0x3C, 0x64]);
+        track.extend_from_slice(&vlq(0));
+        track.extend_from_slice(&[0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20]); // 500000 us
+        track.extend_from_slice(&vlq(0));
+        track.extend_from_slice(&[0x3D, 0x64]); // data byte after a Meta event
+        track.extend_from_slice(&vlq(0));
+        track.extend_from_slice(&[0xFF, 0x2F, 0x00]);
+        mtrk(&mut data, &track);
+
+        let midi = MidiFile::new(&mut data.as_slice()).unwrap();
+        assert_eq!(
+            midi.messages,
+            vec![
+                Message::Normal {
+                    status: 0x90,
+                    data1: 0x3C,
+                    data2: 0x64,
+                },
+                Message::Normal {
+                    status: 0x00,
+                    data1: 0x3D,
+                    data2: 0x64,
+                },
+                Message::EndOfTrack,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_smpte_time_division_is_rejected() {
+        // Bit 15 set => SMPTE timecode division (0xE7 0x28 = 25 fps x 40).
+        // Negative resolutions cannot produce meaningful tick-to-second
+        // timing, so the file is rejected with a clear error.
+        let data = mthd(0, 1, 0xE728);
+        assert!(matches!(
+            MidiFile::new(&mut data.as_slice()),
+            Err(MidiFileError::InvalidTimeDivision(-6360))
+        ));
+    }
+
+    #[test]
+    fn test_zero_time_division_is_rejected() {
+        let data = mthd(0, 1, 0x0000);
+        assert!(matches!(
+            MidiFile::new(&mut data.as_slice()),
+            Err(MidiFileError::InvalidTimeDivision(0))
+        ));
+    }
+
+    #[test]
+    fn test_empty_track_list_is_rejected() {
+        // The SMF specification requires at least one track chunk.
+        let data = mthd(0, 0, 480);
+        assert!(matches!(
+            MidiFile::new(&mut data.as_slice()),
+            Err(MidiFileError::InvalidChunkData(_))
+        ));
+    }
+
+    #[test]
+    fn test_vlq_encoding() {
+        assert_eq!(vlq(0), vec![0x00]);
+        assert_eq!(vlq(0x40), vec![0x40]);
+        assert_eq!(vlq(0x7F), vec![0x7F]);
+        assert_eq!(vlq(0x80), vec![0x81, 0x00]);
+        assert_eq!(vlq(480), vec![0x83, 0x60]);
+        assert_eq!(vlq(0x1FFFFF), vec![0xFF, 0xFF, 0x7F]);
     }
 }

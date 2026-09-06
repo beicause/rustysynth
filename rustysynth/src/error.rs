@@ -171,6 +171,7 @@ pub enum MidiFileError {
     InvalidChunkType { expected: FourCC, actual: FourCC },
     InvalidChunkData(FourCC),
     UnsupportedFormat(i16),
+    InvalidTimeDivision(i16),
     InvalidTempoValue,
 }
 
@@ -196,6 +197,11 @@ impl fmt::Display for MidiFileError {
             MidiFileError::UnsupportedFormat(format) => {
                 write!(f, "the format {} is not supported", format)
             }
+            MidiFileError::InvalidTimeDivision(division) => write!(
+                f,
+                "the time division must be a positive number of ticks per quarter note, but was {} (SMPTE timecode divisions are not supported)",
+                division
+            ),
             MidiFileError::InvalidTempoValue => write!(f, "failed to read the tempo value"),
         }
     }
