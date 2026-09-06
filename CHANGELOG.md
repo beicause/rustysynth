@@ -1,9 +1,20 @@
-# Unreleased (→ v1.4.0)
+# Unreleased
 
-- Renamed the package to `rustysynth-ext` (v1.4.0) so this fork can be
-  published to crates.io as a separate crate, distinct from the upstream
-  `rustysynth`.
-- Added optional SoundFont3 (SF3) support behind the `sf3` cargo feature, using the pure-Rust `lewton` Ogg Vorbis decoder.
+# v1.4.0
+
+- Renamed the package to `rustysynth-ext` so this fork can be published to
+  crates.io as a separate crate, distinct from the upstream `rustysynth`.
+- Added optional SoundFont3 (`.sf3`) support behind the `sf3` cargo feature,
+  using the pure-Rust `lewton` Ogg Vorbis decoder. With the feature enabled,
+  `SoundFont::new` loads `.sf3` files transparently and decompresses every
+  compressed sample into the same 16-bit PCM layout used by `.sf2` files.
+- Fixed a panic when loading malformed SoundFonts whose zone lists contain
+  negative or overflowing generator spans (now fails with
+  `SoundFontError::InvalidZoneList` instead).
+- Fixed negative loop points in `.sf3` samples being silently accepted on
+  every sample but the first (now rejected, matching the `.sf2` path).
+- Eliminated unnecessary `Vec` allocations in the sample-loading path for
+  better performance.
 
 # v1.3.6
 
