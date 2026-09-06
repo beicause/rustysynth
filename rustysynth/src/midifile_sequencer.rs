@@ -1,8 +1,8 @@
 use std::cmp;
 use std::sync::Arc;
 
-use crate::midifile::Message;
 use crate::midifile::MidiFile;
+use crate::midifile::MidiMessage;
 use crate::synthesizer::Synthesizer;
 
 /// An instance of the MIDI file sequencer.
@@ -118,7 +118,7 @@ impl MidiFileSequencer {
 
             if time <= self.current_time {
                 match msg {
-                    Message::Normal {
+                    MidiMessage::Normal {
                         status,
                         data1,
                         data2,
@@ -132,8 +132,8 @@ impl MidiFileSequencer {
                             data2 as i32,
                         );
                     }
-                    Message::LoopStart if self.play_loop => self.loop_index = self.msg_index,
-                    Message::LoopEnd if self.play_loop => {
+                    MidiMessage::LoopStart if self.play_loop => self.loop_index = self.msg_index,
+                    MidiMessage::LoopEnd if self.play_loop => {
                         self.current_time = midi_file.times[self.loop_index];
                         self.msg_index = self.loop_index;
                         self.synthesizer.note_off_all(false);

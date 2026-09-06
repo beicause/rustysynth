@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::io::Read;
 
 use crate::MidiFileError;
@@ -6,17 +7,26 @@ use crate::binary_reader::BinaryReader;
 use crate::four_cc::FourCC;
 use crate::read_counter::ReadCounter;
 
+/// A single event of a merged MIDI file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-pub(crate) enum Message {
+pub enum MidiMessage {
+    /// A channel message; `status` includes the channel in its low nibble.
     Normal { status: u8, data1: u8, data2: u8 },
+    /// A tempo change in microseconds per quarter note (FF 51 03).
+    ///
+    /// Only seen while parsing; tempo changes are folded into the event times
+    /// and never appear in the merged list.
     TempoChange { bytes: [u8; 3] },
+    /// Loop start marker (loop extensions only).
     LoopStart,
+    /// Loop end marker (loop extensions only).
     LoopEnd,
+    /// End of track.
     EndOfTrack,
 }
 
-impl Message {
+impl MidiMessage {
     pub(crate) fn common1(status: u8, data1: u8) -> Self {
         Self::Normal {
             status,
@@ -31,24 +41,24 @@ impl Message {
         if command == 0xB0 {
             match loop_type {
                 MidiFileLoopType::RpgMaker if data1 == 111 => {
-                    return Message::LoopStart;
+                    return MidiMessage::LoopStart;
                 }
 
                 MidiFileLoopType::IncredibleMachine => {
                     if data1 == 110 {
-                        return Message::LoopStart;
+                        return MidiMessage::LoopStart;
                     }
                     if data1 == 111 {
-                        return Message::LoopEnd;
+                        return MidiMessage::LoopEnd;
                     }
                 }
 
                 MidiFileLoopType::FinalFantasy => {
                     if data1 == 116 {
-                        return Message::LoopStart;
+                        return MidiMessage::LoopStart;
                     }
                     if data1 == 117 {
-                        return Message::LoopEnd;
+                        return MidiMessage::LoopEnd;
                     }
                 }
 
@@ -74,7 +84,7 @@ impl Message {
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct MidiFile {
-    pub(crate) messages: Vec<Message>,
+    pub(crate) messages: Vec<MidiMessage>,
     pub(crate) times: Vec<f64>,
 }
 
@@ -147,7 +157,7 @@ impl MidiFile {
         let track_count = track_count as i32;
         let resolution = resolution as i32;
 
-        let mut message_lists: Vec<Vec<Message>> = Vec::with_capacity(track_count as usize);
+        let mut message_lists: Vec<Vec<MidiMessage>> = Vec::with_capacity(track_count as usize);
         let mut tick_lists: Vec<Vec<i32>> = Vec::with_capacity(track_count as usize);
 
         for _i in 0..track_count {
@@ -166,13 +176,13 @@ impl MidiFile {
                     for i in 0..tick_list.len() {
                         if tick_list[i] >= loop_point {
                             tick_list.insert(i, loop_point);
-                            message_list.insert(i, Message::LoopStart);
+                            message_list.insert(i, MidiMessage::LoopStart);
                             break;
                         }
                     }
                 } else {
                     tick_list.push(loop_point);
-                    message_list.push(Message::LoopStart);
+                    message_list.push(MidiMessage::LoopStart);
                 }
             }
             _ => (),
@@ -205,7 +215,7 @@ impl MidiFile {
     fn read_track<R: Read>(
         reader: &mut R,
         loop_type: MidiFileLoopType,
-    ) -> Result<(Vec<Message>, Vec<i32>), MidiFileError> {
+    ) -> Result<(Vec<MidiMessage>, Vec<i32>), MidiFileError> {
         let chunk_type = BinaryReader::read_four_cc(reader)?;
         if chunk_type != b"MTrk" {
             return Err(MidiFileError::InvalidChunkType {
@@ -217,7 +227,7 @@ impl MidiFile {
         let size = BinaryReader::read_i32_big_endian(reader)? as usize;
         let reader = &mut ReadCounter::new(reader);
 
-        let mut messages: Vec<Message> = Vec::new();
+        let mut messages: Vec<MidiMessage> = Vec::new();
         let mut ticks: Vec<i32> = Vec::new();
 
         let mut tick: i32 = 0;
@@ -232,11 +242,11 @@ impl MidiFile {
             if (first & 128) == 0 {
                 let command = last_status & 0xF0;
                 if command == 0xC0 || command == 0xD0 {
-                    messages.push(Message::common1(last_status, first));
+                    messages.push(MidiMessage::common1(last_status, first));
                     ticks.push(tick);
                 } else {
                     let data2 = BinaryReader::read_u8(reader)?;
-                    messages.push(Message::common2(last_status, first, data2, loop_type));
+                    messages.push(MidiMessage::common2(last_status, first, data2, loop_type));
                     ticks.push(tick);
                 }
 
@@ -249,7 +259,7 @@ impl MidiFile {
                 0xFF => match BinaryReader::read_u8(reader)? {
                     0x2F => {
                         BinaryReader::read_u8(reader)?;
-                        messages.push(Message::EndOfTrack);
+                        messages.push(MidiMessage::EndOfTrack);
                         ticks.push(tick);
 
                         // Some MIDI files may have events inserted after the EOT.
@@ -261,7 +271,7 @@ impl MidiFile {
                         return Ok((messages, ticks));
                     }
                     0x51 => {
-                        messages.push(Message::tempo_change(MidiFile::read_tempo(reader)?));
+                        messages.push(MidiMessage::tempo_change(MidiFile::read_tempo(reader)?));
                         ticks.push(tick);
                     }
                     _ => MidiFile::discard_data(reader)?,
@@ -270,12 +280,12 @@ impl MidiFile {
                     let command = first & 0xF0;
                     if command == 0xC0 || command == 0xD0 {
                         let data1 = BinaryReader::read_u8(reader)?;
-                        messages.push(Message::common1(first, data1));
+                        messages.push(MidiMessage::common1(first, data1));
                         ticks.push(tick);
                     } else {
                         let data1 = BinaryReader::read_u8(reader)?;
                         let data2 = BinaryReader::read_u8(reader)?;
-                        messages.push(Message::common2(first, data1, data2, loop_type));
+                        messages.push(MidiMessage::common2(first, data1, data2, loop_type));
                         ticks.push(tick);
                     }
                 }
@@ -288,13 +298,13 @@ impl MidiFile {
     }
 
     fn merge_tracks(
-        message_lists: &[Vec<Message>],
+        message_lists: &[Vec<MidiMessage>],
         tick_lists: &[Vec<i32>],
         resolution: i32,
-    ) -> (Vec<Message>, Vec<f64>) {
+    ) -> (Vec<MidiMessage>, Vec<f64>) {
         // Every merged message corresponds to one entry in one of the tick lists.
         let total_messages: usize = tick_lists.iter().map(Vec::len).sum();
-        let mut merged_messages: Vec<Message> = Vec::with_capacity(total_messages);
+        let mut merged_messages: Vec<MidiMessage> = Vec::with_capacity(total_messages);
         let mut merged_times: Vec<f64> = Vec::with_capacity(total_messages);
 
         let mut indices: Vec<usize> = vec![0; message_lists.len()];
@@ -330,7 +340,7 @@ impl MidiFile {
             current_time += delta_time;
 
             let message = message_lists[min_index as usize][indices[min_index as usize]];
-            if let Message::TempoChange { bytes } = message {
+            if let MidiMessage::TempoChange { bytes } = message {
                 let tempo_i32 = i32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]]);
                 // A tempo of 0 microseconds per quarter note is invalid data;
                 // keep the previous tempo instead of dividing by zero.
@@ -352,6 +362,91 @@ impl MidiFile {
     pub fn get_length(&self) -> f64 {
         self.times.last().copied().unwrap_or(0.0)
     }
+
+    /// Get the merged message list of the MIDI file.
+    ///
+    /// Parallel to [`get_times`](Self::get_times): message *i* occurs at
+    /// `get_times()[i]`. Tempo changes are already folded into the times.
+    pub fn get_messages(&self) -> &[MidiMessage] {
+        &self.messages
+    }
+
+    /// Get the time of every message in absolute seconds.
+    ///
+    /// Parallel to [`get_messages`](Self::get_messages).
+    pub fn get_times(&self) -> &[f64] {
+        &self.times
+    }
+
+    /// Creates a MIDI file from an event list without parsing.
+    ///
+    /// Times must be in non-decreasing order (same-time events allowed);
+    /// returns [`MidiFileError::InvalidEventList`] otherwise. Accepts any
+    /// iterator of `(time, message)` pairs.
+    pub fn new_with_events<I>(events: I) -> Result<Self, MidiFileError>
+    where
+        I: IntoIterator<Item = (f64, MidiMessage)>,
+    {
+        let mut file = Self::default();
+        file.extend_events(events)?;
+        Ok(file)
+    }
+
+    /// Appends events to the end of the MIDI file.
+    ///
+    /// Appended times must be non-decreasing and not earlier than the last
+    /// existing time; otherwise returns [`MidiFileError::InvalidEventList`]
+    /// and leaves the file unchanged. To replace all events, call
+    /// [`clear`](Self::clear) first.
+    pub fn extend_events<I>(&mut self, events: I) -> Result<(), MidiFileError>
+    where
+        I: IntoIterator<Item = (f64, MidiMessage)>,
+    {
+        let base = self.messages.len();
+        let mut last_time = self.times.last().copied().unwrap_or(f64::NEG_INFINITY);
+
+        let iter = events.into_iter();
+        let (min, max) = iter.size_hint();
+        // `Vec::reserve` is a no-op when the current capacity already
+        // suffices, so appending a similar amount of events reuses the
+        // existing allocation.
+        let capacity = max.unwrap_or(min);
+        self.messages.reserve(capacity);
+        self.times.reserve(capacity);
+
+        for (time, message) in iter {
+            // `partial_cmp` yields `None` for NaN, so NaN times are also
+            // rejected here.
+            if !matches!(
+                time.partial_cmp(&last_time),
+                Some(Ordering::Greater | Ordering::Equal)
+            ) {
+                self.messages.truncate(base);
+                self.times.truncate(base);
+                return Err(MidiFileError::InvalidEventList);
+            }
+            last_time = time;
+            self.messages.push(message);
+            self.times.push(time);
+        }
+        Ok(())
+    }
+
+    /// Removes all events from the MIDI file.
+    pub fn clear(&mut self) {
+        self.messages.clear();
+        self.times.clear();
+    }
+}
+
+impl Default for MidiFile {
+    /// Creates an empty MIDI file.
+    fn default() -> Self {
+        Self {
+            messages: Vec::new(),
+            times: Vec::new(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -360,8 +455,8 @@ mod tests {
 
     #[test]
     fn test_message_size() {
-        // Avoid increasing the size of the Message type
-        assert_eq!(size_of::<Message>(), 4);
+        // Avoid increasing the size of the MidiMessage type
+        assert_eq!(size_of::<MidiMessage>(), 4);
     }
 
     /// Encodes a value as a MIDI variable-length quantity.
@@ -429,13 +524,13 @@ mod tests {
         assert_eq!(midi.messages.len(), 2);
         assert_eq!(
             midi.messages[0],
-            Message::Normal {
+            MidiMessage::Normal {
                 status: 0x90,
                 data1: 0x3C,
                 data2: 0x64,
             }
         );
-        assert_eq!(midi.messages[1], Message::EndOfTrack);
+        assert_eq!(midi.messages[1], MidiMessage::EndOfTrack);
         assert_eq!(midi.times.len(), 2);
         assert_close(midi.times[0], 0.5);
         assert_close(midi.times[1], 1.0);
@@ -501,22 +596,22 @@ mod tests {
         assert_eq!(
             midi.messages,
             vec![
-                Message::Normal {
+                MidiMessage::Normal {
                     status: 0x90,
                     data1: 0x3C,
                     data2: 0x64,
                 },
-                Message::Normal {
+                MidiMessage::Normal {
                     status: 0x90,
                     data1: 0x3D,
                     data2: 0x60,
                 },
-                Message::Normal {
+                MidiMessage::Normal {
                     status: 0x90,
                     data1: 0x3E,
                     data2: 0x50,
                 },
-                Message::EndOfTrack,
+                MidiMessage::EndOfTrack,
             ]
         );
     }
@@ -541,17 +636,17 @@ mod tests {
         assert_eq!(
             midi.messages,
             vec![
-                Message::Normal {
+                MidiMessage::Normal {
                     status: 0x90,
                     data1: 0x3C,
                     data2: 0x64,
                 },
-                Message::Normal {
+                MidiMessage::Normal {
                     status: 0x00,
                     data1: 0x3D,
                     data2: 0x64,
                 },
-                Message::EndOfTrack,
+                MidiMessage::EndOfTrack,
             ]
         );
     }
@@ -585,6 +680,206 @@ mod tests {
             MidiFile::new(&mut data.as_slice()),
             Err(MidiFileError::InvalidChunkData(_))
         ));
+    }
+
+    #[test]
+    fn test_message_accessors() {
+        let data = note_at_480();
+        let midi = MidiFile::new(&mut data.as_slice()).unwrap();
+
+        assert_eq!(midi.get_messages().len(), 2);
+        assert_eq!(midi.get_times().len(), 2);
+        assert_close(midi.get_times()[0], 0.5);
+        assert_close(midi.get_times()[1], 1.0);
+
+        let events: Vec<(f64, MidiMessage)> = midi
+            .get_times()
+            .iter()
+            .copied()
+            .zip(midi.get_messages().iter().copied())
+            .collect();
+        assert_eq!(events.len(), 2);
+        assert_close(events[0].0, 0.5);
+        assert_eq!(
+            events[0].1,
+            MidiMessage::Normal {
+                status: 0x90,
+                data1: 0x3C,
+                data2: 0x64,
+            }
+        );
+        assert_close(events[1].0, 1.0);
+        assert_eq!(events[1].1, MidiMessage::EndOfTrack);
+    }
+
+    #[test]
+    fn test_construct_with_events() {
+        let midi = MidiFile::new_with_events(vec![
+            (
+                0.25,
+                MidiMessage::Normal {
+                    status: 0x90,
+                    data1: 60,
+                    data2: 100,
+                },
+            ),
+            (0.5, MidiMessage::EndOfTrack),
+        ])
+        .unwrap();
+
+        assert_eq!(midi.get_messages().len(), 2);
+        assert_eq!(midi.get_times(), &[0.25, 0.5]);
+        assert_close(midi.get_length(), 0.5);
+        assert_close(midi.get_times()[0], 0.25);
+        assert_eq!(
+            midi.get_messages()[0],
+            MidiMessage::Normal {
+                status: 0x90,
+                data1: 60,
+                data2: 100,
+            }
+        );
+    }
+
+    #[test]
+    fn test_construct_allows_same_time_events() {
+        let midi = MidiFile::new_with_events(vec![
+            (
+                0.0,
+                MidiMessage::Normal {
+                    status: 0x90,
+                    data1: 60,
+                    data2: 100,
+                },
+            ),
+            (
+                0.0,
+                MidiMessage::Normal {
+                    status: 0x90,
+                    data1: 61,
+                    data2: 100,
+                },
+            ),
+        ])
+        .unwrap();
+        assert_eq!(midi.get_messages().len(), 2);
+    }
+
+    #[test]
+    fn test_construct_from_iterator_without_vec() {
+        // Any iterator of (time, message) pairs is accepted, so the caller
+        // never has to build an intermediate Vec.
+        let midi = MidiFile::new_with_events((0..3).map(|i| {
+            (
+                i as f64 * 0.5,
+                MidiMessage::Normal {
+                    status: 0x90,
+                    data1: i as u8,
+                    data2: 100,
+                },
+            )
+        }))
+        .unwrap();
+        assert_eq!(midi.get_messages().len(), 3);
+        assert_eq!(midi.get_times(), &[0.0, 0.5, 1.0]);
+    }
+
+    #[test]
+    fn test_construct_rejects_unsorted_times() {
+        let result = MidiFile::new_with_events(vec![
+            (0.5, MidiMessage::EndOfTrack),
+            (
+                0.25,
+                MidiMessage::Normal {
+                    status: 0x90,
+                    data1: 60,
+                    data2: 100,
+                },
+            ),
+        ]);
+        assert!(matches!(result, Err(MidiFileError::InvalidEventList)));
+    }
+
+    #[test]
+    fn test_construct_rejects_nan_time() {
+        let result = MidiFile::new_with_events(vec![(f64::NAN, MidiMessage::EndOfTrack)]);
+        assert!(matches!(result, Err(MidiFileError::InvalidEventList)));
+    }
+
+    #[test]
+    fn test_extend_events_and_clear() {
+        let mut midi = MidiFile::default();
+        assert!(midi.get_messages().is_empty());
+        assert_close(midi.get_length(), 0.0);
+
+        midi.extend_events(vec![(0.5, MidiMessage::EndOfTrack)])
+            .unwrap();
+        assert_eq!(midi.get_times(), &[0.5]);
+        assert_close(midi.get_length(), 0.5);
+
+        // Appending keeps the existing events; same-time events are allowed.
+        midi.extend_events(vec![(0.5, MidiMessage::EndOfTrack)])
+            .unwrap();
+        assert_eq!(midi.get_messages().len(), 2);
+        assert_eq!(midi.get_times(), &[0.5, 0.5]);
+
+        midi.clear();
+        assert!(midi.get_messages().is_empty());
+        assert_close(midi.get_length(), 0.0);
+    }
+
+    #[test]
+    fn test_extend_events_reuses_allocation() {
+        let mut midi = MidiFile::default();
+
+        let events: Vec<(f64, MidiMessage)> = (0..100)
+            .map(|i| {
+                (
+                    i as f64 * 0.01,
+                    MidiMessage::Normal {
+                        status: 0x90,
+                        data1: i as u8,
+                        data2: 0,
+                    },
+                )
+            })
+            .collect();
+        midi.extend_events(events.iter().copied()).unwrap();
+        let messages_capacity = midi.messages.capacity();
+        let times_capacity = midi.times.capacity();
+        assert!(messages_capacity >= 100);
+        assert!(times_capacity >= 100);
+
+        // clear() + extend() is the way to replace all events; it must reuse
+        // the existing buffers instead of allocating new ones.
+        midi.clear();
+        midi.extend_events(vec![(0.0, MidiMessage::EndOfTrack)])
+            .unwrap();
+        assert_eq!(midi.messages.capacity(), messages_capacity);
+        assert_eq!(midi.times.capacity(), times_capacity);
+        assert_eq!(midi.get_messages().len(), 1);
+        assert_eq!(midi.get_times(), &[0.0]);
+    }
+
+    #[test]
+    fn test_extend_events_invalid_input_is_transactional() {
+        let mut midi = MidiFile::new_with_events(vec![(0.0, MidiMessage::EndOfTrack)]).unwrap();
+
+        // Out-of-order input (earlier than an existing event, or descending
+        // within the batch) must leave the file unchanged.
+        let result = midi.extend_events(vec![
+            (0.5, MidiMessage::EndOfTrack),
+            (0.25, MidiMessage::EndOfTrack),
+        ]);
+        assert!(matches!(result, Err(MidiFileError::InvalidEventList)));
+        assert_eq!(midi.get_messages().len(), 1);
+        assert_eq!(midi.get_times(), &[0.0]);
+
+        // An event earlier than the last existing one (0.0) must also be
+        // rejected, leaving the file unchanged.
+        let result = midi.extend_events(vec![(-0.5, MidiMessage::EndOfTrack)]);
+        assert!(matches!(result, Err(MidiFileError::InvalidEventList)));
+        assert_eq!(midi.get_times(), &[0.0]);
     }
 
     #[test]

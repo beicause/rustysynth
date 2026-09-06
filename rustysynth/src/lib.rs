@@ -54,6 +54,7 @@ pub use self::instrument::Instrument;
 pub use self::instrument_region::InstrumentRegion;
 pub use self::loop_mode::LoopMode;
 pub use self::midifile::MidiFile;
+pub use self::midifile::MidiMessage;
 pub use self::midifile_looptype::MidiFileLoopType;
 pub use self::midifile_sequencer::MidiFileSequencer;
 pub use self::preset::Preset;

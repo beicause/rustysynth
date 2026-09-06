@@ -5,6 +5,16 @@
   - Non-positive time divisions (incl. SMPTE) are rejected with `MidiFileError::InvalidTimeDivision`.
   - A zero-tempo change keeps the previous tempo instead of collapsing all subsequent timing.
   - `MidiFile::get_length` no longer panics on an empty message list.
+- Exposed the merged events of a MIDI file for custom sequencers: `MidiMessage`
+  is now a public type, and `MidiFile` provides `get_messages` and `get_times`.
+- `MidiFile` can now also be built programmatically: `new_with_events`,
+  `extend_events`, `clear` and `Default`. Both accept any iterator of
+  `(time, message)` pairs, so no intermediate `Vec` needs to be allocated;
+  `extend_events` appends in place and reuses the existing storage, so
+  building a file incrementally only allocates when the new events no longer
+  fit. Times must be in non-decreasing order, enforced via
+  `MidiFileError::InvalidEventList` (an invalid batch leaves the file
+  unchanged).
 
 # v1.4.0
 

@@ -173,6 +173,7 @@ pub enum MidiFileError {
     UnsupportedFormat(i16),
     InvalidTimeDivision(i16),
     InvalidTempoValue,
+    InvalidEventList,
 }
 
 impl error::Error for MidiFileError {
@@ -203,6 +204,10 @@ impl fmt::Display for MidiFileError {
                 division
             ),
             MidiFileError::InvalidTempoValue => write!(f, "failed to read the tempo value"),
+            MidiFileError::InvalidEventList => write!(
+                f,
+                "the event list is invalid: the times must be in non-decreasing order"
+            ),
         }
     }
 }
