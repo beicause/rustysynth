@@ -6,7 +6,9 @@ members = [
   "xtask",
 ]
 
-resolver = "2"
+# A virtual workspace (no root package) defaults to `resolver = "1"` with a
+# warning; pin the edition-2024 default (v3, since Rust 1.84) explicitly.
+resolver = "3"
 
 [workspace.lints.clippy]
 allow_attributes = "warn"
