@@ -1,4 +1,4 @@
-use rustysynth::SampleHeader;
+use rustysynth_ext::SampleHeader;
 
 pub fn check(sample: &SampleHeader, values: &[i32; 7]) {
     assert_eq!(sample.get_start(), values[0]);

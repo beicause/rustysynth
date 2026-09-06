@@ -10,7 +10,7 @@ name = "xtask"
 path = "src/main.rs"
 
 [dependencies]
-rustysynth = { path = "../rustysynth", features = ["sf3"] }
+rustysynth-ext = { path = "../rustysynth", features = ["sf3"] }
 tar = "0.4.46"
 ureq = "3.4.0"
 zstd = "0.14.0"

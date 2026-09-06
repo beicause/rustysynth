@@ -111,7 +111,7 @@ impl fmt::Display for SoundFontError {
             SoundFontError::SampleDataNotFound => write!(f, "no valid sample data was found"),
             SoundFontError::UnsupportedSampleFormat => write!(
                 f,
-                "SoundFont3 is not supported; rebuild rustysynth with the 'sf3' feature enabled"
+                "SoundFont3 is not supported; rebuild rustysynth-ext with the 'sf3' feature enabled"
             ),
             SoundFontError::SampleDecompressionFailed(message) => {
                 write!(f, "failed to decompress the sample data: {message}")

@@ -1,4 +1,4 @@
-use rustysynth::PresetRegion;
+use rustysynth_ext::PresetRegion;
 
 fn are_equal(x: f64, y: f64) -> bool {
     if x.floor() == x.ceil() && y.floor() == y.ceil() {

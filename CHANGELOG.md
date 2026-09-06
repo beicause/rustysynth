@@ -1,5 +1,8 @@
-# Unreleased
+# Unreleased (→ v1.4.0)
 
+- Renamed the package to `rustysynth-ext` (v1.4.0) so this fork can be
+  published to crates.io as a separate crate, distinct from the upstream
+  `rustysynth`.
 - Added optional SoundFont3 (SF3) support behind the `sf3` cargo feature, using the pure-Rust `lewton` Ogg Vorbis decoder.
 
 # v1.3.6

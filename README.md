@@ -1,6 +1,6 @@
-# RustySynth
+# RustySynth-ext
 
-RustySynth is a SoundFont MIDI synthesizer written in pure Rust, ported from [MeltySynth](https://github.com/sinshu/meltysynth).
+RustySynth-ext is a SoundFont MIDI synthesizer written in pure Rust, ported from [MeltySynth](https://github.com/sinshu/meltysynth). It is a fork of [RustySynth](https://github.com/sinshu/rustysynth) that adds optional SoundFont3 (`.sf3`) support.
 
 
 
@@ -25,16 +25,16 @@ https://www.youtube.com/watch?v=o9rPTJIPmVk
 
 ## Installation
 
-RustySynth is available on [crates.io](https://crates.io/crates/rustysynth):
+RustySynth-ext is available on [crates.io](https://crates.io/crates/rustysynth-ext):
 
 ```
-cargo add rustysynth
+cargo add rustysynth-ext
 ```
 
 To load SoundFont3 (`.sf3`) files, which store Ogg-Vorbis-compressed samples, enable the optional `sf3` feature:
 
 ```
-cargo add rustysynth --features sf3
+cargo add rustysynth-ext --features sf3
 ```
 
 
@@ -179,4 +179,4 @@ std::thread::sleep(std::time::Duration::from_secs(10));
 
 ## License
 
-RustySynth is available under [the MIT license](LICENSE.txt).
+RustySynth-ext is available under [the MIT license](LICENSE.txt). It is a fork of [RustySynth](https://github.com/sinshu/rustysynth), whose copyright notice is preserved in the license text.

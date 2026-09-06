@@ -7,12 +7,12 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rustysynth = { path = "../rustysynth" }
+rustysynth-ext = { path = "../rustysynth" }
 
 [features]
 # Adds the SoundFont3 snapshot tests, which load and decode
-# FluidR3Mono_GM.sf3 through the `sf3` feature of rustysynth.
-sf3 = ["rustysynth/sf3"]
+# FluidR3Mono_GM.sf3 through the `sf3` feature of rustysynth-ext.
+sf3 = ["rustysynth-ext/sf3"]
 
 [lints]
 workspace = true

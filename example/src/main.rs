@@ -1,8 +1,8 @@
-use rustysynth::MidiFile;
-use rustysynth::MidiFileSequencer;
-use rustysynth::SoundFont;
-use rustysynth::Synthesizer;
-use rustysynth::SynthesizerSettings;
+use rustysynth_ext::MidiFile;
+use rustysynth_ext::MidiFileSequencer;
+use rustysynth_ext::SoundFont;
+use rustysynth_ext::Synthesizer;
+use rustysynth_ext::SynthesizerSettings;
 use std::fs::File;
 use std::io::Write;
 use std::sync::Arc;
