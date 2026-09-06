@@ -1,5 +1,10 @@
 # RustySynth-ext
 
+[![Build](https://github.com/beicause/rustysynth/actions/workflows/ci.yml/badge.svg)](https://github.com/beicause/rustysynth/actions)
+[![License](https://img.shields.io/badge/license-Apache--2.0_OR_MIT-blue.svg)](https://github.com/beicause/rustysynth)
+[![Cargo](https://img.shields.io/crates/v/rustysynth-ext.svg)](https://crates.io/crates/rustysynth-ext)
+[![Documentation](https://docs.rs/rustysynth-ext/badge.svg)](https://docs.rs/rustysynth-ext)
+
 RustySynth-ext is a SoundFont MIDI synthesizer written in pure Rust, ported from [MeltySynth](https://github.com/sinshu/meltysynth). It is a fork of [RustySynth](https://github.com/sinshu/rustysynth) that adds optional SoundFont3 (`.sf3`) support.
 
 
