@@ -19,7 +19,12 @@ Cargo.lock
 *.pcm
 *.mid
 
-# Used for tests (keep the checked-in sample files visible; the .sf2 files
-# fetched by `cargo xtask fetch-sf2` stay ignored)
-!samples/*.sf3
-!samples/*.tar.zst
+# Test fonts are fetched by `cargo xtask fetch-fonts`; the source archive
+# comes from <https://github.com/beicause/beicause/tree/main/assets>. All of
+# them stay ignored (the .sf2/.sf3 patterns above already cover
+# FluidR3Mono_GM.sf2/.sf3 and TimGM6mb.sf2).
+samples/FluidR3Mono_GM.tar.zst
+
+# Used for tests (keep the tiny checked-in sample files visible).
+!samples/dummy.sf3
+!samples/test_empty_samples.sf2

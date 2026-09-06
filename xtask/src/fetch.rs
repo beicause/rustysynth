@@ -1,19 +1,26 @@
-//! `cargo xtask fetch-sf2` - downloads/extracts the SoundFont2 test fonts
-//! into `samples/`:
+//! `cargo xtask fetch-fonts` - downloads/extracts the test fonts into
+//! `samples/`:
 //!
-//! * `FluidR3Mono_GM.sf2` - extracted from the bundled
+//! * `FluidR3Mono_GM.sf2` - extracted from the downloaded
 //!   `samples/FluidR3Mono_GM.tar.zst` (decompressed in-process with the
 //!   `zstd` crate, archive unpacked with the `tar` crate).
+//! * `FluidR3Mono_GM.tar.zst` / `FluidR3Mono_GM.sf3` - downloaded from the
+//!   beicause assets repo:
+//!   <https://github.com/beicause/beicause/tree/main/assets>.
 //! * `TimGM6mb.sf2`       - downloaded (official host, then verified mirrors).
 //!
 //! The task is idempotent: files that already exist are left untouched.
-//! Every `.sf2` under `samples/` is ignored by git (see the root
-//! `.gitignore`).
+//! Every font under `samples/` is ignored by git (see the root `.gitignore`).
 
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+/// Raw-file base URL of the beicause assets repo that hosts the
+/// FluidR3Mono_GM fonts:
+/// <https://github.com/beicause/beicause/tree/main/assets>.
+const BEICAUSE_ASSETS: &str = "https://raw.githubusercontent.com/beicause/beicause/main/assets";
 
 fn repo_root() -> PathBuf {
     // CARGO_MANIFEST_DIR = <repo>/xtask
@@ -43,33 +50,46 @@ fn download(url: &str, target: &Path) -> Result<(), String> {
 fn fetch_fluid(samples_dir: &Path) -> Result<(), String> {
     let target = samples_dir.join("FluidR3Mono_GM.sf2");
     let archive = samples_dir.join("FluidR3Mono_GM.tar.zst");
+    let sf3 = samples_dir.join("FluidR3Mono_GM.sf3");
 
+    // The .sf2 font ships inside the .tar.zst archive, so download the
+    // archive first and extract the .sf2 from it.
     if target.is_file() {
         println!("exists: {}", target.display());
-        return Ok(());
-    }
-    if !archive.is_file() {
-        println!(
-            "skip: '{}' not found, cannot extract FluidR3Mono_GM.sf2",
-            archive.display()
-        );
-        return Ok(());
-    }
-
-    println!("extracting {} ...", target.display());
-    let file = File::open(&archive).map_err(|err| err.to_string())?;
-    let decoder = zstd::stream::read::Decoder::new(file).map_err(|err| err.to_string())?;
-    let mut archive_reader = tar::Archive::new(decoder);
-    archive_reader
-        .unpack(samples_dir)
-        .map_err(|err| err.to_string())?;
-
-    if target.is_file() {
-        println!("saved: {}", target.display());
-        Ok(())
     } else {
-        Err(format!("the archive did not contain {}", target.display()))
+        if !archive.is_file() {
+            let url = format!("{BEICAUSE_ASSETS}/FluidR3Mono_GM.tar.zst");
+            println!("downloading {url} ...");
+            download(&url, &archive)?;
+        } else {
+            println!("exists: {}", archive.display());
+        }
+
+        println!("extracting {} ...", target.display());
+        let file = File::open(&archive).map_err(|err| err.to_string())?;
+        let decoder = zstd::stream::read::Decoder::new(file).map_err(|err| err.to_string())?;
+        let mut archive_reader = tar::Archive::new(decoder);
+        archive_reader
+            .unpack(samples_dir)
+            .map_err(|err| err.to_string())?;
+
+        if target.is_file() {
+            println!("saved: {}", target.display());
+        } else {
+            return Err(format!("the archive did not contain {}", target.display()));
+        }
     }
+
+    if !sf3.is_file() {
+        let url = format!("{BEICAUSE_ASSETS}/FluidR3Mono_GM.sf3");
+        println!("downloading {url} ...");
+        download(&url, &sf3)?;
+        println!("saved: {}", sf3.display());
+    } else {
+        println!("exists: {}", sf3.display());
+    }
+
+    Ok(())
 }
 
 /// Mirrors for TimGM6mb.sf2. The mirror copies were verified to produce the

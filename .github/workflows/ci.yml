@@ -82,10 +82,10 @@ jobs:
       - name: Build ${{matrix.os}}
         run: cargo build --workspace --all-features --all-targets
 
-      - name: Fetch test soundfonts
-        # TimGM6mb.sf2 is not tracked (see .gitignore); it is downloaded
-        # by the xtask tool. The other test fonts ship with the repo.
-        run: cargo xtask fetch-sf2
+      - name: Fetch test fonts
+        # The test fonts are not tracked (see .gitignore); they are
+        # downloaded by the xtask tool.
+        run: cargo xtask fetch-fonts
 
       - name: Test ${{matrix.os}}
         run: cargo test --workspace --all-targets --all-features
