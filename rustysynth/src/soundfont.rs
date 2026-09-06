@@ -136,7 +136,9 @@ mod tests {
     }
 
     // Snapshots a preset region in the same field order (and loop-mode
-    // encoding) used by rustysynth_test::preset_util::check.
+    // encoding) used by rustysynth_test::preset_util::check. Only used by the
+    // sf3-vs-sf2 parity test, so gate it with the same feature.
+    #[cfg(feature = "sf3")]
     fn preset_region_values(region: &crate::PresetRegion) -> Vec<f64> {
         vec![
             region.get_modulation_lfo_to_pitch() as f64,
