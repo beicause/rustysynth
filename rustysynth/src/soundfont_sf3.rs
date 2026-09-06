@@ -41,6 +41,20 @@ pub(crate) fn decode_vorbis_samples(
             )));
         }
 
+        // The loop points of a SoundFont3 are offsets relative to the start of
+        // the decompressed sample, so they must not be negative. The sanity
+        // check in `SoundFont::sanity_check` only catches a negative offset on
+        // the first sample (where it is not shifted by the pool base), so
+        // reject them here for every sample before adding the base offset.
+        // This mirrors the SoundFont2 path, which also rejects negative loop
+        // points unconditionally.
+        if header.start_loop < 0 || header.end_loop < 0 {
+            return Err(SoundFontError::SampleDecompressionFailed(format!(
+                "the loop points of sample '{}' are invalid ({}..{})",
+                header.name, header.start_loop, header.end_loop
+            )));
+        }
+
         let decoded = decode_stream(&smpl[start as usize..end as usize])?;
 
         let base = wave_data.len() as i32;
@@ -99,8 +113,9 @@ mod tests {
             .join("samples")
     }
 
-    #[test]
-    fn decodes_the_sample_of_dummy_sf3() {
+    /// The raw `smpl` sub-chunk bytes of `samples/dummy.sf3` (a small,
+    /// self-contained Ogg Vorbis stream).
+    fn dummy_smpl() -> Vec<u8> {
         let path = samples_dir_path().join("dummy.sf3");
         let bytes = fs::read(&path).unwrap();
 
@@ -113,6 +128,13 @@ mod tests {
             u32::from_le_bytes(bytes[smpl_pos + 4..smpl_pos + 8].try_into().unwrap()) as usize;
         let smpl = &bytes[smpl_pos + 8..smpl_pos + 8 + smpl_size];
         assert_eq!(&smpl[..4], b"OggS");
+        smpl.to_vec()
+    }
+
+    #[test]
+    fn decodes_the_sample_of_dummy_sf3() {
+        let bytes = fs::read(samples_dir_path().join("dummy.sf3")).unwrap();
+        let smpl = dummy_smpl();
 
         // shdr sub-chunk: 46-byte SampleHeader records.
         // dwStart @ +20, dwEnd @ +24, dwStartloop @ +28, dwEndloop @ +32.
@@ -139,7 +161,7 @@ mod tests {
             sample_type: 17,
         }];
 
-        let wave_data = decode_vorbis_samples(smpl, &mut headers).unwrap();
+        let wave_data = decode_vorbis_samples(&smpl, &mut headers).unwrap();
 
         assert!(
             !wave_data.is_empty(),
@@ -153,5 +175,43 @@ mod tests {
         assert!(headers[0].end as usize <= wave_data.len());
         assert!(headers[0].start_loop >= 0);
         assert!(headers[0].end_loop as usize <= wave_data.len());
+    }
+
+    #[test]
+    fn rejects_negative_loop_points_on_any_sample() {
+        let smpl = dummy_smpl();
+
+        // The first header is valid, so the failure must come from the second
+        // one even though it is shifted by the pool base (i.e. its negative
+        // relative loop point is not caught by the sanity check in SoundFont).
+        let mut headers = vec![
+            SampleHeader {
+                name: String::from("440_sine"),
+                start: 0,
+                end: smpl.len() as i32,
+                start_loop: 0,
+                end_loop: 100,
+                sample_rate: 44100,
+                original_pitch: 60,
+                pitch_correction: 0,
+                link: 0,
+                sample_type: 17,
+            },
+            SampleHeader {
+                name: String::from("bad_loops"),
+                start: 0,
+                end: smpl.len() as i32,
+                start_loop: -1,
+                end_loop: 100,
+                sample_rate: 44100,
+                original_pitch: 60,
+                pitch_correction: 0,
+                link: 0,
+                sample_type: 17,
+            },
+        ];
+
+        let err = decode_vorbis_samples(&smpl, &mut headers).unwrap_err();
+        assert!(matches!(err, SoundFontError::SampleDecompressionFailed(_)));
     }
 }
