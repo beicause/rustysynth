@@ -30,7 +30,7 @@
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 
-use rustysynth::{LoopMode, SoundFont};
+use rustysynth_ext::{LoopMode, SoundFont};
 
 fn repo_root() -> PathBuf {
     // CARGO_MANIFEST_DIR = <repo>/xtask
@@ -41,7 +41,7 @@ fn repo_root() -> PathBuf {
 }
 
 /// Field order must stay in sync with `instrument_util::check`.
-fn instrument_region_row(region: &rustysynth::InstrumentRegion) -> Vec<f64> {
+fn instrument_region_row(region: &rustysynth_ext::InstrumentRegion) -> Vec<f64> {
     let loop_mode = match region.get_sample_modes() {
         LoopMode::NoLoop => 0.0,
         LoopMode::Continuous => 1.0,
@@ -102,7 +102,7 @@ fn instrument_region_row(region: &rustysynth::InstrumentRegion) -> Vec<f64> {
 }
 
 /// Field order must stay in sync with `preset_util::check`.
-fn preset_region_row(region: &rustysynth::PresetRegion) -> Vec<f64> {
+fn preset_region_row(region: &rustysynth_ext::PresetRegion) -> Vec<f64> {
     vec![
         region.get_modulation_lfo_to_pitch() as f64,
         region.get_vibrato_lfo_to_pitch() as f64,
@@ -174,7 +174,7 @@ fn common_header(font_file: &str, util: &str, test_fn: &str) -> String {
     s.push_str(&format!(
         "// From samples/{font_file}. Do not edit by hand.\n\n"
     ));
-    s.push_str("use rustysynth::SoundFont;\n");
+    s.push_str("use rustysynth_ext::SoundFont;\n");
     s.push_str("use std::fs::{self, File};\n");
     s.push_str("use std::path::PathBuf;\n\n");
     if !util.is_empty() {

@@ -1,6 +1,9 @@
-# RustySynth
+# RustySynth-ext
 
-RustySynth is a SoundFont MIDI synthesizer written in pure Rust, ported from [MeltySynth](https://github.com/sinshu/meltysynth).
+RustySynth-ext is a fork of [RustySynth](https://github.com/sinshu/rustysynth) — a
+SoundFont MIDI synthesizer written in pure Rust, ported from
+[MeltySynth](https://github.com/sinshu/meltysynth) — that adds optional
+SoundFont3 (`.sf3`) support on top of the upstream SoundFont2 (`.sf2`) support.
 
 
 
@@ -8,16 +11,15 @@ RustySynth is a SoundFont MIDI synthesizer written in pure Rust, ported from [Me
 
 * Suitable for both real-time and offline synthesis.
 * Supports standard MIDI files with additional features including dynamic tempo changing.
-* No dependencies other than the standard library.
-
-## SoundFont3 (SF3)
+* No dependencies other than the standard library by default.
+* Optional SoundFont3 (.sf3) support.
 
 SF3 SoundFonts store their samples as Ogg Vorbis streams instead of raw PCM,
 roughly 10x smaller than the equivalent SF2. Loading them is opt-in because it
 adds the pure-Rust [`lewton`](https://crates.io/crates/lewton) decoder:
 
 ```
-cargo add rustysynth --features sf3
+cargo add rustysynth-ext --features sf3
 ```
 
 With the `sf3` feature enabled, `SoundFont::new` loads `.sf3` files
@@ -115,4 +117,6 @@ sequencer.render(&mut left[..], &mut right[..]);
 
 ## License
 
-RustySynth is available under [the MIT license](LICENSE.txt).
+RustySynth-ext is available under [the MIT license](LICENSE.txt). It is a fork
+of [RustySynth](https://github.com/sinshu/rustysynth), whose copyright notice is
+preserved in the license text.
