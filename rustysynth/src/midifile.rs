@@ -224,7 +224,15 @@ impl MidiFile {
             });
         }
 
-        let size = BinaryReader::read_i32_big_endian(reader)? as usize;
+        let size_i32 = BinaryReader::read_i32_big_endian(reader)?;
+        // A negative chunk size is malformed data; casting it straight to
+        // `usize` would wrap into a huge allocation bound / skip bound.
+        if size_i32 < 0 {
+            return Err(MidiFileError::InvalidChunkData(FourCC::from_bytes(
+                *b"MTrk",
+            )));
+        }
+        let size = size_i32 as usize;
         let reader = &mut ReadCounter::new(reader);
 
         let mut messages: Vec<MidiMessage> = Vec::new();
@@ -234,6 +242,15 @@ impl MidiFile {
         let mut last_status: u8 = 0;
 
         loop {
+            // Stay inside this track chunk: a track without an EndOfTrack, or
+            // a chunk size smaller than the event data, must not bleed into
+            // the bytes of the following chunk.
+            if reader.bytes_read() >= size {
+                return Err(MidiFileError::InvalidChunkData(FourCC::from_bytes(
+                    *b"MTrk",
+                )));
+            }
+
             let delta = BinaryReader::read_i32_variable_length(reader)?;
             let first = BinaryReader::read_u8(reader)?;
 
@@ -263,9 +280,19 @@ impl MidiFile {
                         ticks.push(tick);
 
                         // Some MIDI files may have events inserted after the EOT.
-                        // Such events should be ignored.
-                        if reader.bytes_read() < size {
-                            BinaryReader::discard_data(reader, size - reader.bytes_read())?;
+                        // Such events should be ignored. An EOT past the
+                        // declared chunk end means the size itself is corrupt:
+                        // error out instead of underflowing the subtraction.
+                        match reader.bytes_read().cmp(&size) {
+                            Ordering::Less => {
+                                BinaryReader::discard_data(reader, size - reader.bytes_read())?;
+                            }
+                            Ordering::Equal => (),
+                            Ordering::Greater => {
+                                return Err(MidiFileError::InvalidChunkData(FourCC::from_bytes(
+                                    *b"MTrk",
+                                )));
+                            }
                         }
 
                         return Ok((messages, ticks));
@@ -890,5 +917,66 @@ mod tests {
         assert_eq!(vlq(0x80), vec![0x81, 0x00]);
         assert_eq!(vlq(480), vec![0x83, 0x60]);
         assert_eq!(vlq(0x1FFFFF), vec![0xFF, 0xFF, 0x7F]);
+    }
+
+    #[test]
+    fn test_negative_mtrk_size_is_rejected() {
+        // A negative MTrk chunk size is malformed; it must not wrap into a
+        // huge `usize` bound when cast.
+        let mut data = mthd(0, 1, 480);
+        data.extend_from_slice(b"MTrk");
+        data.extend_from_slice(&(-1i32).to_be_bytes());
+        data.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]);
+        assert!(matches!(
+            MidiFile::new(&mut data.as_slice()),
+            Err(MidiFileError::InvalidChunkData(_))
+        ));
+    }
+
+    #[test]
+    fn test_empty_mtrk_is_rejected() {
+        // Zero-length track data holds no EndOfTrack, so the track is
+        // truncated rather than empty-but-valid.
+        let mut data = mthd(0, 1, 480);
+        mtrk(&mut data, &[]);
+        assert!(matches!(
+            MidiFile::new(&mut data.as_slice()),
+            Err(MidiFileError::InvalidChunkData(_))
+        ));
+    }
+
+    #[test]
+    fn test_track_without_eot_does_not_bleed_into_next_chunk() {
+        // Track 1 has a note but no EndOfTrack and its declared size covers
+        // exactly that note. The parser must stop at the chunk end instead
+        // of consuming track 2's header bytes as events.
+        let mut data = mthd(0, 2, 480);
+        let mut track1 = vlq(0);
+        track1.extend_from_slice(&[0x90, 0x3C, 0x64]);
+        mtrk(&mut data, &track1);
+        let mut track2 = vlq(480);
+        track2.extend_from_slice(&[0x90, 0x3C, 0x64]);
+        track2.extend_from_slice(&vlq(480));
+        track2.extend_from_slice(&[0xFF, 0x2F, 0x00]);
+        mtrk(&mut data, &track2);
+        assert!(matches!(
+            MidiFile::new(&mut data.as_slice()),
+            Err(MidiFileError::InvalidChunkData(_))
+        ));
+    }
+
+    #[test]
+    fn test_eot_past_chunk_end_is_rejected() {
+        // The EndOfTrack event ends beyond the declared chunk size: the size
+        // itself is corrupt. This must error instead of underflowing the
+        // trailing-bytes subtraction.
+        let mut data = mthd(0, 1, 480);
+        data.extend_from_slice(b"MTrk");
+        data.extend_from_slice(&2u32.to_be_bytes());
+        data.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]);
+        assert!(matches!(
+            MidiFile::new(&mut data.as_slice()),
+            Err(MidiFileError::InvalidChunkData(_))
+        ));
     }
 }
