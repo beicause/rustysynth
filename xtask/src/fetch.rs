@@ -20,7 +20,7 @@ use std::time::Duration;
 /// Raw-file base URL of the beicause assets repo that hosts the
 /// FluidR3Mono_GM fonts:
 /// <https://github.com/beicause/beicause/tree/main/assets>.
-const BEICAUSE_ASSETS: &str = "https://raw.githubusercontent.com/beicause/beicause/main/assets";
+const FLUID_R3_ASSETS: &str = "https://raw.githubusercontent.com/beicause/beicause/main/assets";
 
 fn repo_root() -> PathBuf {
     // CARGO_MANIFEST_DIR = <repo>/xtask
@@ -58,7 +58,7 @@ fn fetch_fluid(samples_dir: &Path) -> Result<(), String> {
         println!("exists: {}", target.display());
     } else {
         if !archive.is_file() {
-            let url = format!("{BEICAUSE_ASSETS}/FluidR3Mono_GM.tar.zst");
+            let url = format!("{FLUID_R3_ASSETS}/FluidR3Mono_GM.tar.zst");
             println!("downloading {url} ...");
             download(&url, &archive)?;
         } else {
@@ -81,7 +81,7 @@ fn fetch_fluid(samples_dir: &Path) -> Result<(), String> {
     }
 
     if !sf3.is_file() {
-        let url = format!("{BEICAUSE_ASSETS}/FluidR3Mono_GM.sf3");
+        let url = format!("{FLUID_R3_ASSETS}/FluidR3Mono_GM.sf3");
         println!("downloading {url} ...");
         download(&url, &sf3)?;
         println!("saved: {}", sf3.display());
@@ -95,7 +95,6 @@ fn fetch_fluid(samples_dir: &Path) -> Result<(), String> {
 /// Mirrors for TimGM6mb.sf2. The mirror copies were verified to produce the
 /// same sample data that the timgm6mb_* golden tests expect.
 const TIMGM6MB_MIRRORS: &[&str] = &[
-    "https://member.keymusician.com/Member/TimGM6mb.sf2",
     "https://raw.githubusercontent.com/arbruijn/TimGM6mb/master/TimGM6mb.sf2",
     "https://raw.githubusercontent.com/deepin-community/timgm6mb-soundfont/master/TimGM6mb.sf2",
 ];
