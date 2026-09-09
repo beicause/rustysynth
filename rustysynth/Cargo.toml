@@ -1,6 +1,6 @@
 [package]
 name = "rustysynth-ext"
-version = "1.4.0"
+version = "1.5.0-alpha.1"
 edition = "2024"
 
 description = "A SoundFont (sf2, sf3) MIDI synthesizer written in pure Rust (a fork of rustysynth)"

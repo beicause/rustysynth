@@ -1,5 +1,7 @@
 # Unreleased
 
+# v1.5.0-alpha.1
+
 - MIDI parsing now follows the SMF specification more closely:
   - SysEx/Meta events clear running status (previously a following data byte was misparsed).
   - Non-positive time divisions (incl. SMPTE) are rejected with `MidiFileError::InvalidTimeDivision`.
