@@ -14,6 +14,10 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+  RUSTFLAGS: "-C debuginfo=0 -D warnings"
   ANDROID_NDK_VERSION: 29.0.14206865
   CACHE_SUFFIX: f # cache busting
 
@@ -53,16 +57,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7.0.1
-
-      - name: Disable debug symbols
-        shell: bash
-        run: |
-          mkdir -p .cargo
-
-          cat <<EOF >> .cargo/config.toml
-            [profile.dev]
-            debug = false
-          EOF
 
       - name: Install rust toolchain
         run: |
@@ -105,16 +99,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
-      - name: Disable debug symbols
-        shell: bash
-        run: |
-          mkdir -p .cargo
-
-          cat <<EOF >> .cargo/config.toml
-            [profile.dev]
-            debug = false
-          EOF
-
       - name: Install rust toolchain
         run: |
           rustup toolchain install stable --no-self-update --profile=minimal --component clippy
@@ -143,16 +127,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
-
-      - name: Disable debug symbols
-        shell: bash
-        run: |
-          mkdir -p .cargo
-
-          cat <<EOF >> .cargo/config.toml
-            [profile.dev]
-            debug = false
-          EOF
 
       - name: Install rust toolchain
         run: |
