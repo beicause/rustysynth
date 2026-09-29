@@ -20,7 +20,7 @@ Cargo.lock
 *.mid
 
 # Test fonts are fetched by `cargo xtask fetch-fonts`; the source archive
-# comes from <https://github.com/beicause/beicause/tree/main/assets>. All of
+# comes from <https://github.com/beicause/soundfont>. All of
 # them stay ignored (the .sf2/.sf3 patterns above already cover
 # FluidR3Mono_GM.sf2/.sf3 and TimGM6mb.sf2).
 samples/FluidR3Mono_GM.tar.zst

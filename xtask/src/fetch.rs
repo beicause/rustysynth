@@ -5,8 +5,8 @@
 //!   `samples/FluidR3Mono_GM.tar.zst` (decompressed in-process with the
 //!   `zstd` crate, archive unpacked with the `tar` crate).
 //! * `FluidR3Mono_GM.tar.zst` / `FluidR3Mono_GM.sf3` - downloaded from the
-//!   beicause assets repo:
-//!   <https://github.com/beicause/beicause/tree/main/assets>.
+//!   beicause soundfont repo:
+//!   <https://github.com/beicause/soundfont>.
 //! * `TimGM6mb.sf2`       - downloaded (official host, then verified mirrors).
 //!
 //! The task is idempotent: files that already exist are left untouched.
@@ -17,10 +17,10 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-/// Raw-file base URL of the beicause assets repo that hosts the
+/// Raw-file base URL of the beicause soundfont repo that hosts the
 /// FluidR3Mono_GM fonts:
-/// <https://github.com/beicause/beicause/tree/main/assets>.
-const FLUID_R3_ASSETS: &str = "https://raw.githubusercontent.com/beicause/beicause/main/assets";
+/// <https://github.com/beicause/soundfont>.
+const FLUID_R3_ASSETS: &str = "https://raw.githubusercontent.com/beicause/soundfont/main";
 
 fn repo_root() -> PathBuf {
     // CARGO_MANIFEST_DIR = <repo>/xtask
