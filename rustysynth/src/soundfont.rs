@@ -73,14 +73,20 @@ impl SoundFont {
                 let end = region.get_sample_end();
                 let start_loop = region.get_sample_start_loop();
                 let end_loop = region.get_sample_end_loop();
-                let loop_mode = region.get_sample_modes();
 
+                // A reversed or empty loop range no longer rejects the whole
+                // file: the oscillator plays such a region once without
+                // looping.
+                // https://github.com/sinshu/rustysynth/issues/55
+                //
+                // Loop points outside the sample data are a different matter.
+                // They mean the sample data is truncated, so the region cannot
+                // be played at all and the file stays rejected.
                 if start < 0
                     || start_loop < 0
                     || end as usize >= self.wave_data.len()
                     || end_loop as usize >= self.wave_data.len()
                     || end <= start
-                    || (loop_mode != LoopMode::NoLoop && start_loop >= end_loop)
                 {
                     return Err(SoundFontError::SanityCheckFailed);
                 }
