@@ -1,5 +1,7 @@
 # Unreleased
 
+# v1.5.0
+
 - Rendering a block is about 1.7x faster: a voice is mixed into both channels in
   a single pass, the voices of a block are filtered four at a time, and the
   hot loops of the oscillator, the biquad filter and the reverb keep their state
