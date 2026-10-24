@@ -91,6 +91,9 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+      - name: Package
+        run: cargo package -p rustysynth-ext --all-features
+
   build-wasm:
     name: Build wasm
     # runtime is normally 30 seconds

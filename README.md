@@ -1,7 +1,7 @@
 # RustySynth-ext
 
 [![Build](https://github.com/beicause/rustysynth/actions/workflows/ci.yml/badge.svg)](https://github.com/beicause/rustysynth/actions)
-[![License](https://img.shields.io/badge/license-Apache--2.0_OR_MIT-blue.svg)](https://github.com/beicause/rustysynth)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/beicause/rustysynth/blob/main/LICENSE.txt)
 [![Cargo](https://img.shields.io/crates/v/rustysynth-ext.svg)](https://crates.io/crates/rustysynth-ext)
 [![Documentation](https://docs.rs/rustysynth-ext/badge.svg)](https://docs.rs/rustysynth-ext)
 
@@ -48,7 +48,7 @@ This is a demo video to show the synthesizer running on [rust-sfml](https://gith
 
 https://www.youtube.com/watch?v=o9rPTJIPmVk
 
-[![Youtube video](rustysynth-yt.png)](https://www.youtube.com/watch?v=o9rPTJIPmVk)
+[![Youtube video](https://raw.githubusercontent.com/beicause/rustysynth/main/rustysynth-yt.png)](https://www.youtube.com/watch?v=o9rPTJIPmVk)
 
 
 
@@ -76,7 +76,7 @@ Here are some example codes.
 > Each example omits the `use` statements.
 > For full code, see the respective links.
 
-[An example code to synthesize a simple chord:](example/src/main.rs#L15)
+[An example code to synthesize a simple chord:](https://github.com/beicause/rustysynth/blob/main/example/src/main.rs#L20)
 
 ```rust
 // Load the SoundFont.
@@ -101,7 +101,7 @@ let mut right: Vec<f32> = vec![0_f32; sample_count];
 synthesizer.render(&mut left[..], &mut right[..]);
 ```
 
-[Another example code to synthesize a MIDI file:](example/src/main.rs#L41)
+[Another example code to synthesize a MIDI file:](https://github.com/beicause/rustysynth/blob/main/example/src/main.rs#L46)
 
 ```rust
 // Load the SoundFont.
@@ -208,7 +208,7 @@ std::thread::sleep(std::time::Duration::from_secs(10));
 
 ## Development
 
-The workspace keeps its developer tasks in the `xtask` crate:
+This section applies to the repository checkout, not to the published crate. The workspace keeps its developer tasks in the `xtask` crate:
 
 ```
 cargo xtask fetch-fonts        # download the test fonts into samples/
@@ -229,4 +229,4 @@ that two builds can be compared bit for bit with `cmp`.
 
 ## License
 
-RustySynth-ext is available under [the MIT license](LICENSE.txt). It is a fork of [RustySynth](https://github.com/sinshu/rustysynth), whose copyright notice is preserved in the license text.
+RustySynth-ext is available under [the MIT license](https://github.com/beicause/rustysynth/blob/main/LICENSE.txt). It is a fork of [RustySynth](https://github.com/sinshu/rustysynth), whose copyright notice is preserved in the license text.

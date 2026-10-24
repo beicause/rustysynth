@@ -1,3 +1,30 @@
+//! A SoundFont (`.sf2` and, behind the `sf3` feature, `.sf3`) MIDI synthesizer
+//! written in pure Rust.
+//!
+//! A [`SoundFont`] is loaded once and shared behind an `Arc`, and a [`Synthesizer`]
+//! built from it renders the waveform into a pair of `f32` buffers, either played
+//! directly with [`Synthesizer::note_on`] and friends or driven by a [`MidiFile`]
+//! through a [`MidiFileSequencer`].
+//!
+//! ```no_run
+//! use std::fs::File;
+//! use std::sync::Arc;
+//!
+//! use rustysynth_ext::{SoundFont, Synthesizer, SynthesizerSettings};
+//!
+//! let mut sf2 = File::open("TimGM6mb.sf2").unwrap();
+//! let sound_font = Arc::new(SoundFont::new(&mut sf2).unwrap());
+//!
+//! let settings = SynthesizerSettings::new(44100);
+//! let mut synthesizer = Synthesizer::new(&sound_font, &settings).unwrap();
+//!
+//! synthesizer.note_on(0, 60, 100);
+//!
+//! let mut left = vec![0.0_f32; 44100];
+//! let mut right = vec![0.0_f32; 44100];
+//! synthesizer.render(&mut left, &mut right);
+//! ```
+
 mod error;
 
 mod array_math;
