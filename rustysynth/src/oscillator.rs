@@ -98,6 +98,15 @@ impl Oscillator {
     }
 
     fn fill_block(&mut self, data: &[i16], block: &mut [f32], pitch_ratio: f64) -> bool {
+        // A pitch ratio that is zero, negative, not finite or absurdly large comes
+        // from a corrupt SoundFont. Such a ratio would stall, rewind or overflow the
+        // read position, so the voice is dropped instead of reading out of bounds.
+        // https://github.com/sinshu/rustysynth/issues/57
+        let ratio_limit = (i64::MAX / 2) as f64 / Oscillator::FRAC_UNIT as f64;
+        if pitch_ratio.is_nan() || pitch_ratio <= 0_f64 || pitch_ratio >= ratio_limit {
+            return false;
+        }
+
         let pitch_ratio_fp = (Oscillator::FRAC_UNIT as f64 * pitch_ratio) as i64;
 
         if self.looping {
@@ -142,9 +151,22 @@ impl Oscillator {
         let loop_length = (self.end_loop - self.start_loop) as i64;
         let loop_length_fp = loop_length << Oscillator::FRAC_BITS;
 
+        // Looping is only enabled for a non-empty loop range, but a corrupt
+        // region must not be able to divide by zero below.
+        if loop_length_fp <= 0 {
+            return false;
+        }
+
         for sample in block.iter_mut() {
             if self.position_fp >= end_loop_fp {
-                self.position_fp -= loop_length_fp;
+                // A loop shorter than the distance the read position advances per
+                // sample needs more than one wrap. Wrapping only once used to leave
+                // the position past the loop and eventually read out of bounds.
+                // The remainder keeps the arithmetic identical for loops that are
+                // long enough, so healthy SoundFonts render bit for bit the same.
+                // https://github.com/sinshu/rustysynth/issues/57
+                let overshoot = self.position_fp - end_loop_fp;
+                self.position_fp = end_loop_fp - loop_length_fp + overshoot % loop_length_fp;
             }
 
             let index1 = (self.position_fp >> Oscillator::FRAC_BITS) as usize;
@@ -163,5 +185,74 @@ impl Oscillator {
         }
 
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn oscillator(start_loop: i32, end_loop: i32, sample_rate: i32) -> Oscillator {
+        let settings = SynthesizerSettings::new(44100);
+        let mut oscillator = Oscillator::new(&settings);
+        oscillator.start(
+            LoopMode::Continuous,
+            sample_rate,
+            0,
+            4000,
+            start_loop,
+            end_loop,
+            60,
+            0,
+            0,
+            100,
+        );
+        oscillator
+    }
+
+    // A loop of a single frame advances by more than its own length per sample
+    // at a high pitch. Wrapping once per sample left the read position drifting
+    // further past the loop on every sample until it indexed out of bounds
+    // (#57, reported with a two frame Harpsichord loop in Arachno).
+    #[test]
+    fn test_a_loop_shorter_than_the_step_does_not_read_out_of_bounds() {
+        let data = vec![1000_i16; 4096];
+        let mut oscillator = oscillator(1000, 1001, 44100);
+        let mut block = vec![0_f32; 256];
+
+        // An octave and a half above the root key, so the step is about 4 frames.
+        assert!(oscillator.process(&data, &mut block, 78_f32));
+        assert!(block.iter().all(|sample| sample.is_finite()));
+
+        // Keep rendering: the error used to show up after the loop had been
+        // overshot a few times rather than on the very first block.
+        for _ in 0..64 {
+            assert!(oscillator.process(&data, &mut block, 78_f32));
+        }
+    }
+
+    // A corrupt sample rate or pitch must not leave the read position stall,
+    // rewind or overflow, so the voice is dropped instead (#57).
+    #[test]
+    fn test_an_invalid_pitch_ratio_drops_the_voice() {
+        let data = vec![1000_i16; 4096];
+        let mut block = vec![0_f32; 64];
+
+        let mut stalled = oscillator(1000, 2000, 0);
+        assert!(!stalled.process(&data, &mut block, 60_f32));
+
+        let mut reversed = oscillator(1000, 2000, 44100);
+        assert!(!reversed.process(&data, &mut block, f32::NAN));
+    }
+
+    // An empty loop range is played once instead of being looped (#55).
+    #[test]
+    fn test_an_empty_loop_range_is_played_once() {
+        let data = vec![1000_i16; 4096];
+        let mut oscillator = oscillator(1000, 1000, 44100);
+        let mut block = vec![0_f32; 64];
+
+        assert!(!oscillator.looping);
+        assert!(oscillator.process(&data, &mut block, 60_f32));
     }
 }

@@ -90,7 +90,7 @@ impl Channel {
     }
 
     pub(crate) fn set_bank(&mut self, value: i32) {
-        self.bank_number = value;
+        self.bank_number = Channel::clamp_data(value);
 
         if self.is_percussion_channel {
             self.bank_number += 128;
@@ -98,39 +98,48 @@ impl Channel {
     }
 
     pub(crate) fn set_patch(&mut self, value: i32) {
-        self.patch_number = value;
+        self.patch_number = Channel::clamp_data(value);
+    }
+
+    // The MIDI specification gives every data byte 7 bits. A caller of
+    // Synthesizer::process_midi_message can pass anything, though, and shifting
+    // such a value by 7 bits or narrowing it to u8 would silently wrap around
+    // and change the sound in unrelated ways.
+    // https://github.com/sinshu/rustysynth/issues/57
+    fn clamp_data(value: i32) -> i32 {
+        value.clamp(0, 127)
     }
 
     pub(crate) fn set_modulation_coarse(&mut self, value: i32) {
-        self.modulation = (self.modulation & 0x7F) | (value << 7) as i16;
+        self.modulation = (self.modulation & 0x7F) | (Channel::clamp_data(value) << 7) as i16;
     }
 
     pub(crate) fn set_modulation_fine(&mut self, value: i32) {
-        self.modulation = (((self.modulation as i32) & 0xFF80) | value) as i16;
+        self.modulation = (((self.modulation as i32) & 0xFF80) | Channel::clamp_data(value)) as i16;
     }
 
     pub(crate) fn set_volume_coarse(&mut self, value: i32) {
-        self.volume = (self.volume & 0x7F) | (value << 7) as i16;
+        self.volume = (self.volume & 0x7F) | (Channel::clamp_data(value) << 7) as i16;
     }
 
     pub(crate) fn set_volume_fine(&mut self, value: i32) {
-        self.volume = (((self.volume as i32) & 0xFF80) | value) as i16;
+        self.volume = (((self.volume as i32) & 0xFF80) | Channel::clamp_data(value)) as i16;
     }
 
     pub(crate) fn set_pan_coarse(&mut self, value: i32) {
-        self.pan = (self.pan & 0x7F) | (value << 7) as i16;
+        self.pan = (self.pan & 0x7F) | (Channel::clamp_data(value) << 7) as i16;
     }
 
     pub(crate) fn set_pan_fine(&mut self, value: i32) {
-        self.pan = (((self.pan as i32) & 0xFF80) | value) as i16;
+        self.pan = (((self.pan as i32) & 0xFF80) | Channel::clamp_data(value)) as i16;
     }
 
     pub(crate) fn set_expression_coarse(&mut self, value: i32) {
-        self.expression = (self.expression & 0x7F) | (value << 7) as i16;
+        self.expression = (self.expression & 0x7F) | (Channel::clamp_data(value) << 7) as i16;
     }
 
     pub(crate) fn set_expression_fine(&mut self, value: i32) {
-        self.expression = (((self.expression as i32) & 0xFF80) | value) as i16;
+        self.expression = (((self.expression as i32) & 0xFF80) | Channel::clamp_data(value)) as i16;
     }
 
     pub(crate) fn set_hold_pedal(&mut self, value: i32) {
@@ -138,20 +147,20 @@ impl Channel {
     }
 
     pub(crate) fn set_reverb_send(&mut self, value: i32) {
-        self.reverb_send = value as u8;
+        self.reverb_send = Channel::clamp_data(value) as u8;
     }
 
     pub(crate) fn set_chorus_send(&mut self, value: i32) {
-        self.chorus_send = value as u8;
+        self.chorus_send = Channel::clamp_data(value) as u8;
     }
 
     pub(crate) fn set_rpn_coarse(&mut self, value: i32) {
-        self.rpn = (self.rpn & 0x7F) | (value << 7) as i16;
+        self.rpn = (self.rpn & 0x7F) | (Channel::clamp_data(value) << 7) as i16;
         self.last_data_type = DataType::Rpn;
     }
 
     pub(crate) fn set_rpn_fine(&mut self, value: i32) {
-        self.rpn = (((self.rpn as i32) & 0xFF80) | value) as i16;
+        self.rpn = (((self.rpn as i32) & 0xFF80) | Channel::clamp_data(value)) as i16;
         self.last_data_type = DataType::Rpn;
     }
 
@@ -169,11 +178,12 @@ impl Channel {
         }
 
         if self.rpn == 0 {
-            self.pitch_bend_range = (self.pitch_bend_range & 0x7F) | (value << 7) as i16;
+            self.pitch_bend_range =
+                (self.pitch_bend_range & 0x7F) | (Channel::clamp_data(value) << 7) as i16;
         } else if self.rpn == 1 {
-            self.fine_tune = (self.fine_tune & 0x7F) | (value << 7) as i16;
+            self.fine_tune = (self.fine_tune & 0x7F) | (Channel::clamp_data(value) << 7) as i16;
         } else if self.rpn == 2 {
-            self.coarse_tune = (value - 64) as i16;
+            self.coarse_tune = (Channel::clamp_data(value) - 64) as i16;
         }
     }
 
@@ -183,14 +193,17 @@ impl Channel {
         }
 
         if self.rpn == 0 {
-            self.pitch_bend_range = (((self.pitch_bend_range as i32) & 0xFF80) | value) as i16;
+            self.pitch_bend_range =
+                (((self.pitch_bend_range as i32) & 0xFF80) | Channel::clamp_data(value)) as i16;
         } else if self.rpn == 1 {
-            self.fine_tune = (((self.fine_tune as i32) & 0xFF80) | value) as i16;
+            self.fine_tune =
+                (((self.fine_tune as i32) & 0xFF80) | Channel::clamp_data(value)) as i16;
         }
     }
 
     pub(crate) fn set_pitch_bend(&mut self, value1: i32, value2: i32) {
-        self.pitch_bend = (1_f32 / 8192_f32) * ((value1 | (value2 << 7)) - 8192) as f32;
+        let value = (Channel::clamp_data(value1) | (Channel::clamp_data(value2) << 7)) - 8192;
+        self.pitch_bend = (1_f32 / 8192_f32) * value as f32;
     }
 
     pub(crate) fn get_bank_number(&self) -> i32 {
@@ -239,5 +252,88 @@ impl Channel {
 
     pub(crate) fn get_pitch_bend(&self) -> f32 {
         self.get_pitch_bend_range() * self.pitch_bend
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The MIDI specification gives every data byte 7 bits, but a caller of
+    // Synthesizer::process_midi_message can pass any i32. Out of range values
+    // used to wrap around when they were shifted or narrowed (#57).
+    #[test]
+    fn test_data_bytes_are_clamped_to_seven_bits() {
+        let mut channel = Channel::new(false);
+
+        channel.set_bank(999);
+        assert_eq!(channel.get_bank_number(), 127);
+        channel.set_bank(-1);
+        assert_eq!(channel.get_bank_number(), 0);
+
+        channel.set_patch(300);
+        assert_eq!(channel.get_patch_number(), 127);
+
+        channel.set_reverb_send(999);
+        assert_eq!(channel.get_reverb_send(), 1.0);
+        channel.set_reverb_send(-1);
+        assert_eq!(channel.get_reverb_send(), 0.0);
+    }
+
+    fn select_rpn(channel: &mut Channel, rpn: i32) {
+        channel.set_rpn_coarse(0);
+        channel.set_rpn_fine(rpn);
+    }
+
+    // A data entry value out of range must not wrap around when it is shifted
+    // into the high half of a 14-bit register or narrowed to 7 bits.
+    #[test]
+    fn test_data_entry_is_clamped_to_seven_bits() {
+        // RPN 0 is the pitch bend range.
+        let mut channel = Channel::new(false);
+        select_rpn(&mut channel, 0);
+        channel.data_entry_coarse(999);
+        assert_eq!(channel.get_pitch_bend_range(), 127.0);
+
+        let mut channel = Channel::new(false);
+        select_rpn(&mut channel, 0);
+        channel.data_entry_coarse(-1);
+        assert_eq!(channel.get_pitch_bend_range(), 0.0);
+
+        // RPN 1 is the fine tune, stored as a signed offset from 8192.
+        let mut channel = Channel::new(false);
+        select_rpn(&mut channel, 1);
+        channel.data_entry_coarse(999);
+        assert_eq!(channel.get_tune(), (127.0 * 128.0 - 8192.0) / 8192.0);
+
+        let mut channel = Channel::new(false);
+        select_rpn(&mut channel, 1);
+        channel.data_entry_coarse(-1);
+        assert_eq!(channel.get_tune(), -1.0);
+
+        // RPN 2 is the coarse tune, which is stored around a centre of 64.
+        let mut channel = Channel::new(false);
+        select_rpn(&mut channel, 2);
+        channel.data_entry_coarse(999);
+        assert_eq!(channel.get_tune(), 63.0);
+
+        let mut channel = Channel::new(false);
+        select_rpn(&mut channel, 2);
+        channel.data_entry_coarse(-1);
+        assert_eq!(channel.get_tune(), -64.0);
+    }
+
+    #[test]
+    fn test_pitch_bend_is_clamped_to_seven_bits() {
+        let mut channel = Channel::new(false);
+
+        channel.set_pitch_bend(127, 127);
+        assert_eq!(channel.get_pitch_bend(), 2.0 * 8191.0 / 8192.0);
+
+        channel.set_pitch_bend(999, 999);
+        assert_eq!(channel.get_pitch_bend(), 2.0 * 8191.0 / 8192.0);
+
+        channel.set_pitch_bend(-1, -1);
+        assert_eq!(channel.get_pitch_bend(), -2.0);
     }
 }

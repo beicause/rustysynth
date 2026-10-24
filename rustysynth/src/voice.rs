@@ -240,7 +240,11 @@ impl Voice {
 
         let mut mix_gain = self.note_gain * channel_gain * self.vol_env.get_value();
         if self.dynamic_volume {
-            let decibels = self.mod_lfo_to_volume * self.mod_lfo.get_value();
+            // The modulation is a attenuation, so it must not amplify. A positive
+            // value would turn into a gain above one, and a large enough one into
+            // infinity, which then poisons the feedback of reverb and chorus.
+            // https://github.com/sinshu/rustysynth/issues/57
+            let decibels = (self.mod_lfo_to_volume * self.mod_lfo.get_value()).min(0_f32);
             mix_gain *= SoundFontMath::decibels_to_linear(decibels);
         }
 

@@ -56,6 +56,17 @@ impl BiQuadFilter {
             let q = resonance
                 - BiQuadFilter::RESONANCE_PEAK_OFFSET / (1_f32 + 6_f32 * (resonance - 1_f32));
 
+            // A Q of zero or below puts the poles outside the unit circle, which makes
+            // the output grow with every sample instead of decaying. SoundFonts can ask
+            // for it through initial attenuation and a filter Q below -1 dB, so such a
+            // filter is treated as having no resonance at all.
+            // https://github.com/sinshu/rustysynth/issues/57
+            if q.is_nan() || q <= 0_f32 {
+                self.active = false;
+
+                return;
+            }
+
             let w = 2_f32 * consts::PI * cutoff_frequency / self.sample_rate as f32;
             let cosw = w.cos();
             let alpha = w.sin() / (2_f32 * q);
@@ -103,5 +114,48 @@ impl BiQuadFilter {
         self.a2 = b2 / a0;
         self.a3 = a1 / a0;
         self.a4 = a2 / a0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The resonance fit returns a negative Q for a resonance around -1.3 dB,
+    // which put the poles outside the unit circle and made the output grow by
+    // a factor of 1.5 per sample (#57). A non-positive Q means no resonance,
+    // so the filter is bypassed instead.
+    #[test]
+    fn test_a_negative_q_does_not_make_the_filter_unstable() {
+        let settings = SynthesizerSettings::new(44100);
+        let mut filter = BiQuadFilter::new(&settings);
+
+        let resonance = 10_f32.powf(0.05 * -1.3);
+        filter.set_low_pass_filter(1000_f32, resonance);
+
+        let mut block = vec![0.5_f32; 64];
+        filter.process(&mut block);
+
+        assert!(
+            block.iter().all(|sample| *sample == 0.5_f32),
+            "the filter changed a block while it should have been bypassed"
+        );
+    }
+
+    #[test]
+    fn test_a_normal_resonance_still_filters() {
+        let settings = SynthesizerSettings::new(44100);
+        let mut filter = BiQuadFilter::new(&settings);
+
+        filter.set_low_pass_filter(1000_f32, 1_f32);
+
+        let mut block = vec![0_f32; 64];
+        block[0] = 1_f32;
+        filter.process(&mut block);
+
+        assert!(
+            block.iter().skip(1).any(|sample| *sample > 0_f32),
+            "the filter did not pass the impulse"
+        );
     }
 }
