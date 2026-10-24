@@ -120,6 +120,44 @@ jobs:
       - name: Build wasm
         run: cargo build --target wasm32-unknown-unknown -p rustysynth-ext --all-targets --all-features
 
+  test-wasm:
+    name: Test wasm32-wasip1
+    # runtime is normally 2 minutes
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Install rust toolchain
+        run: |
+          rustup toolchain install stable --no-self-update --profile=minimal --component clippy
+          rustup target add wasm32-wasip1
+
+      - name: Install wasmtime
+        uses: bytecodealliance/actions/wasmtime/setup@v1
+
+      - name: Caching
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: test-wasm-${{ env.CACHE_SUFFIX }}
+          env-vars: ImageVersion
+          cache-bin: false
+
+      - name: Fetch test fonts
+        # The test fonts are not tracked (see .gitignore); they are
+        # downloaded by the xtask tool.
+        run: cargo xtask fetch-fonts
+
+      - name: Clippy wasm32-wasip1
+        run: cargo clippy --target wasm32-wasip1 -p rustysynth-ext -p rustysynth_test --all-targets --all-features -- -Dwarnings
+
+      - name: Test wasm32-wasip1
+        # The guest can only read what the runner preopens, so the workspace is
+        # exposed under the same path the tests resolve their fonts from.
+        run: cargo test --target wasm32-wasip1 -p rustysynth-ext -p rustysynth_test --all-features
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run --dir ${{ github.workspace }}::${{ github.workspace }}
+
   build-android:
     name: Build android
     # runtime is normally 30 seconds
