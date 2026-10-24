@@ -76,6 +76,13 @@ pub(crate) struct Voice {
     // This is used to smooth out the cutoff frequency.
     smoothed_cutoff: f32,
 
+    // The panning angle is recomputed for every block, but it only changes when
+    // the channel moves it. Its cosine and sine are cached alongside it.
+    cached_pan_angle: f32,
+    cached_pan_cos: f32,
+    cached_pan_sin: f32,
+    pan_angle_is_valid: bool,
+
     voice_state: VoiceState,
     /// Time elapsed in samples
     voice_length: usize,
@@ -119,6 +126,10 @@ impl Voice {
             instrument_reverb: 0_f32,
             instrument_chorus: 0_f32,
             smoothed_cutoff: 0_f32,
+            cached_pan_angle: 0_f32,
+            cached_pan_cos: 0_f32,
+            cached_pan_sin: 0_f32,
+            pan_angle_is_valid: false,
             voice_state: VoiceState::Playing,
             voice_length: 0,
             min_voice_length: (settings.sample_rate / 500) as usize,
@@ -171,6 +182,8 @@ impl Voice {
         self.filter.set_low_pass_filter(self.cutoff, self.resonance);
 
         self.smoothed_cutoff = self.cutoff;
+
+        self.pan_angle_is_valid = false;
 
         self.voice_state = VoiceState::Playing;
         self.voice_length = 0;
@@ -303,8 +316,15 @@ impl Voice {
             self.current_mix_gain_left = 0_f32;
             self.current_mix_gain_right = mix_gain;
         } else {
-            self.current_mix_gain_left = mix_gain * angle.cos();
-            self.current_mix_gain_right = mix_gain * angle.sin();
+            if !self.pan_angle_is_valid || angle != self.cached_pan_angle {
+                self.cached_pan_angle = angle;
+                self.cached_pan_cos = angle.cos();
+                self.cached_pan_sin = angle.sin();
+                self.pan_angle_is_valid = true;
+            }
+
+            self.current_mix_gain_left = mix_gain * self.cached_pan_cos;
+            self.current_mix_gain_right = mix_gain * self.cached_pan_sin;
         }
 
         self.current_reverb_send = SoundFontMath::clamp(
