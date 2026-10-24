@@ -187,39 +187,61 @@ impl Reverb {
             buffer_index[i] = filter.buffer_index;
         }
 
-        for (input, output) in input.iter().zip(output.iter_mut()) {
-            let mut value_out = *output;
+        // The filters are independent, so the samples they read are gathered first
+        // and the rest of the arithmetic is done on fixed size arrays. Arrays let
+        // the compiler handle four filters per instruction, which the interleaved
+        // scalar form below does not.
+        //
+        // The following ifs are to avoid performance problem due to denormalized number.
+        // The original implementation uses unsafe cast to detect denormalized number.
+        // I tried to reproduce the original implementation using Unsafe.As,
+        // but the simple Math.Abs version was faster according to some benchmarks.
+        let mut value = [0_f32; 8];
+        let mut store = [0_f32; 8];
+        let mut slot_index = [0_usize; 8];
 
+        for (input, output) in input.iter().zip(output.iter_mut()) {
             for i in 0..8 {
                 if buffer_index[i] == buffer_length[i] {
                     buffer_index[i] = 0;
                 }
 
                 let index = buffer_index[i];
-                let slot = &mut filters[i].buffer[index];
                 buffer_index[i] = index + 1;
+                slot_index[i] = index;
+                value[i] = filters[i].buffer[index];
+            }
 
-                // The following ifs are to avoid performance problem due to denormalized number.
-                // The original implementation uses unsafe cast to detect denormalized number.
-                // I tried to reproduce the original implementation using Unsafe.As,
-                // but the simple Math.Abs version was faster according to some benchmarks.
-
-                let mut value = *slot;
-                if value.abs() < 1.0E-6_f32 {
-                    value = 0_f32;
+            for sample in value.iter_mut() {
+                if sample.abs() < 1.0E-6_f32 {
+                    *sample = 0_f32;
                 }
+            }
 
-                let mut store = (value * damp2[i]) + (filter_store[i] * damp1[i]);
-                if store.abs() < 1.0E-6_f32 {
-                    store = 0_f32;
+            for i in 0..8 {
+                store[i] = (value[i] * damp2[i]) + (filter_store[i] * damp1[i]);
+            }
+
+            for sample in store.iter_mut() {
+                if sample.abs() < 1.0E-6_f32 {
+                    *sample = 0_f32;
                 }
-                filter_store[i] = store;
+            }
 
-                *slot = *input + (store * feedback[i]);
-                value_out += value;
+            filter_store = store;
+
+            // The samples are summed in the original order, because the sum is
+            // rounded at every step.
+            let mut value_out = *output;
+            for sample in value.iter() {
+                value_out += *sample;
             }
 
             *output = value_out;
+
+            for i in 0..8 {
+                filters[i].buffer[slot_index[i]] = *input + (store[i] * feedback[i]);
+            }
         }
 
         for (i, filter) in filters.iter_mut().enumerate() {
