@@ -133,7 +133,13 @@ impl MidiFileSequencer {
                         );
                     }
                     MidiMessage::LoopStart if self.play_loop => self.loop_index = self.msg_index,
-                    MidiMessage::LoopEnd if self.play_loop => {
+                    // A loop that starts and ends at the same tick would rewind to the
+                    // very message that is being processed and never let the render call
+                    // finish, so a loop needs a non-empty tick range to be taken.
+                    // https://github.com/sinshu/rustysynth/issues/57
+                    MidiMessage::LoopEnd
+                        if self.play_loop && time > midi_file.times[self.loop_index] =>
+                    {
                         self.current_time = midi_file.times[self.loop_index];
                         self.msg_index = self.loop_index;
                         self.synthesizer.note_off_all(false);
@@ -146,7 +152,11 @@ impl MidiFileSequencer {
             }
         }
 
-        if self.msg_index == midi_file.messages.len() && self.play_loop {
+        if self.msg_index == midi_file.messages.len()
+            && self.play_loop
+            && self.loop_index < self.msg_index
+            && midi_file.times[self.loop_index] < midi_file.times[self.msg_index - 1]
+        {
             self.current_time = midi_file.times[self.loop_index];
             self.msg_index = self.loop_index;
             self.synthesizer.note_off_all(false);
@@ -205,5 +215,89 @@ impl MidiFileSequencer {
         }
 
         self.speed = value;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
+
+    use crate::test_font::*;
+    use crate::{SoundFont, SynthesizerSettings};
+
+    fn synthesizer() -> Synthesizer {
+        let mut reader = std::io::Cursor::new(build_sf2(&sample_spec(), 1));
+        let sound_font = Arc::new(SoundFont::new(&mut reader).unwrap());
+        let settings = SynthesizerSettings::new(44100);
+        Synthesizer::new(&sound_font, &settings).unwrap()
+    }
+
+    // A loop that starts and ends on the same tick used to rewind to the very
+    // message being processed, so a single render call never returned (#57).
+    // The work runs on a thread so that a regression fails the test instead of
+    // hanging the test run forever.
+    #[test]
+    fn test_a_zero_length_loop_does_not_hang_the_sequencer() {
+        let midi_file = Arc::new(
+            MidiFile::new_with_events([
+                (0.0, MidiMessage::LoopStart),
+                (0.0, MidiMessage::LoopEnd),
+                (0.0, MidiMessage::EndOfTrack),
+            ])
+            .unwrap(),
+        );
+
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let mut sequencer = MidiFileSequencer::new(synthesizer());
+            sequencer.play(&midi_file, true);
+
+            let mut left = vec![0_f32; 512];
+            let mut right = vec![0_f32; 512];
+            sequencer.render(&mut left, &mut right);
+
+            sender.send(sequencer.end_of_sequence()).unwrap();
+        });
+
+        let end_of_sequence = receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the sequencer did not finish rendering");
+        assert!(end_of_sequence);
+    }
+
+    // A loop with a range still repeats: rendering must not fall through to
+    // the end of the sequence.
+    #[test]
+    fn test_a_normal_loop_still_repeats() {
+        let midi_file = Arc::new(
+            MidiFile::new_with_events([
+                (0.0, MidiMessage::LoopStart),
+                (
+                    0.0,
+                    MidiMessage::Normal {
+                        status: 0x90,
+                        data1: 60,
+                        data2: 100,
+                    },
+                ),
+                (1.0, MidiMessage::LoopEnd),
+                (2.0, MidiMessage::EndOfTrack),
+            ])
+            .unwrap(),
+        );
+
+        let mut sequencer = MidiFileSequencer::new(synthesizer());
+        sequencer.play(&midi_file, true);
+
+        let mut left = vec![0_f32; 44100];
+        let mut right = vec![0_f32; 44100];
+        sequencer.render(&mut left, &mut right);
+
+        assert!(!sequencer.end_of_sequence());
+        assert!(sequencer.get_position() < 2.0);
     }
 }

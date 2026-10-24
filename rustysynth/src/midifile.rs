@@ -254,7 +254,15 @@ impl MidiFile {
             let delta = BinaryReader::read_i32_variable_length(reader)?;
             let first = BinaryReader::read_u8(reader)?;
 
-            tick += delta;
+            // A delta time that pushes the tick past the range of the type would
+            // make the timing jump backwards instead of failing the load.
+            // https://github.com/sinshu/rustysynth/issues/57
+            let Some(next) = tick.checked_add(delta) else {
+                return Err(MidiFileError::InvalidChunkData(FourCC::from_bytes(
+                    *b"MTrk",
+                )));
+            };
+            tick = next;
 
             if (first & 128) == 0 {
                 let command = last_status & 0xF0;
@@ -342,12 +350,15 @@ impl MidiFile {
         let mut tempo: f64 = 120.0;
 
         loop {
-            let mut min_tick = i32::MAX;
+            // A tick can be as large as i32::MAX, so the sentinel that marks
+            // "no track left" has to stay outside the range of the values it is
+            // compared against.
+            let mut min_tick = i64::MAX;
             let mut min_index: i32 = -1;
 
             for ch in 0..tick_lists.len() {
                 if indices[ch] < tick_lists[ch].len() {
-                    let tick = tick_lists[ch][indices[ch]];
+                    let tick = tick_lists[ch][indices[ch]] as i64;
                     if tick < min_tick {
                         min_tick = tick;
                         min_index = ch as i32;
@@ -360,10 +371,10 @@ impl MidiFile {
             }
 
             let next_tick = tick_lists[min_index as usize][indices[min_index as usize]];
-            let delta_tick = next_tick - current_tick;
+            let delta_tick = next_tick as i64 - current_tick as i64;
             let delta_time = 60.0 / (resolution as f64 * tempo) * delta_tick as f64;
 
-            current_tick += delta_tick;
+            current_tick = next_tick;
             current_time += delta_time;
 
             let message = message_lists[min_index as usize][indices[min_index as usize]];
@@ -978,5 +989,50 @@ mod tests {
             MidiFile::new(&mut data.as_slice()),
             Err(MidiFileError::InvalidChunkData(_))
         ));
+    }
+
+    // Delta times accumulate into an i32 tick. Summing past the range of the
+    // type used to wrap around, which made the timing jump backwards (#57).
+    #[test]
+    fn test_a_tick_overflow_is_rejected() {
+        let mut data = mthd(0, 1, 480);
+        let mut track = Vec::new();
+
+        // 2^28 - 1 is the largest delta a four byte variable length quantity
+        // can encode, so eight of them approach the i32 limit and the ninth
+        // passes it.
+        for _ in 0..10 {
+            track.extend_from_slice(&vlq(0x0FFF_FFFF));
+            track.extend_from_slice(&[0x90, 0x3C, 0x64]);
+        }
+        mtrk(&mut data, &track);
+
+        assert!(matches!(
+            MidiFile::new(&mut data.as_slice()),
+            Err(MidiFileError::InvalidChunkData(_))
+        ));
+    }
+
+    // A tick is allowed to reach exactly i32::MAX. When the sentinel used to
+    // find the next event was also i32::MAX, an event on that tick was never
+    // selected and the whole remaining sequence was dropped without an error.
+    #[test]
+    fn test_a_tick_at_the_type_limit_is_kept() {
+        let mut data = mthd(0, 1, 480);
+        let mut track = Vec::new();
+
+        // Eight of the largest deltas reach 2^31 - 8, and a delta of 7 puts the
+        // last event exactly on i32::MAX.
+        for _ in 0..8 {
+            track.extend_from_slice(&vlq(0x0FFF_FFFF));
+            track.extend_from_slice(&[0x90, 0x3C, 0x64]);
+        }
+        track.extend_from_slice(&vlq(7));
+        track.extend_from_slice(&[0xFF, 0x2F, 0x00]);
+        mtrk(&mut data, &track);
+
+        let midi = MidiFile::new(&mut data.as_slice()).unwrap();
+        assert_eq!(midi.messages.len(), 9);
+        assert_eq!(*midi.messages.last().unwrap(), MidiMessage::EndOfTrack);
     }
 }

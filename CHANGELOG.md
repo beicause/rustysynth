@@ -13,6 +13,32 @@
 - A duplicate `smpl` sub-chunk is now rejected with
   `SoundFontError::InvalidSampleData` instead of silently replacing the
   previously read sample data (thanks to @Defkil).
+- Chunk readers now skip the padding byte that RIFF inserts after a chunk of an
+  odd size. SoundFonts with an odd-length INFO string (such as `INAM` or
+  `ICMT`) now load instead of failing with `ListContainsUnknownId`
+  ([#56](https://github.com/sinshu/rustysynth/issues/56)).
+- Hardened against malformed input
+  ([#57](https://github.com/sinshu/rustysynth/issues/57)):
+  - Zone spans that point past the zone list are reported as
+    `SoundFontError::InvalidInstrument` / `InvalidPreset` instead of
+    panicking.
+  - The declared size of a chunk is no longer trusted for the allocation, so a
+    corrupt file cannot abort the process by claiming gigabytes.
+  - The `ifil` and `iver` chunks consume their declared size, so the following
+    chunk is read from the right offset.
+  - A region whose loop is shorter than the distance the read position advances
+    per sample wraps back correctly instead of reading out of bounds.
+  - A filter with a non-positive Q is bypassed instead of becoming unstable and
+    growing without bound.
+  - A modulation LFO that would push the attenuation above zero decibels is
+    clamped, so it cannot amplify a voice.
+  - Out of range MIDI data bytes are clamped to 7 bits instead of wrapping
+    around when they are shifted or narrowed.
+  - A MIDI tick that would overflow the tick counter is rejected instead of
+    making the timing jump backwards, and an event that lands exactly on the
+    largest representable tick is no longer dropped when the tracks are merged.
+  - A MIDI loop whose start and end fall on the same tick is ignored instead of
+    hanging the sequencer forever.
 
 # v1.5.0-alpha.1
 
