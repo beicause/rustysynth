@@ -1,2 +1,3 @@
 [alias]
 xtask = "run --package xtask --"
+xtask-bench = "run --release --package xtask -- bench"

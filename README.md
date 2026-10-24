@@ -182,6 +182,27 @@ std::thread::sleep(std::time::Duration::from_secs(10));
 
 
 
+## Development
+
+The workspace keeps its developer tasks in the `xtask` crate:
+
+```
+cargo xtask fetch-fonts        # download the test fonts into samples/
+cargo xtask generate-goldens   # regenerate the golden data in rustysynth_test/
+cargo xtask-bench              # benchmark rendering and SoundFont loading
+```
+
+`cargo xtask-bench` builds the benchmark in release mode and prints the process
+CPU time of each case next to its wall clock. On a busy machine the wall clock
+of a benchmark swings by well over 10%, while the CPU time of the same build is
+reproducible to about 1%, so the CPU time is the number to compare against when
+judging a change. It needs Linux for that; elsewhere only the wall clock is
+shown. `--reps <n>` sets the number of runs per case, `--font <path>` picks a
+font other than the default, and `--dump <dir>` writes the rendered waveform so
+that two builds can be compared bit for bit with `cmp`.
+
+
+
 ## License
 
 RustySynth-ext is available under [the MIT license](LICENSE.txt). It is a fork of [RustySynth](https://github.com/sinshu/rustysynth), whose copyright notice is preserved in the license text.
