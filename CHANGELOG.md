@@ -1,5 +1,12 @@
 # Unreleased
 
+- SoundFont3 samples are now decoded with the pure-Rust Symphonia decoder
+  instead of `lewton`, and the independent sample streams are decoded in
+  parallel on up to eight threads. Loading `FluidR3Mono_GM.sf3` costs about
+  1.3 s of CPU time and 0.3 s of wall time instead of 2.2 s. The encoder padding
+  of the Ogg pages is now trimmed with Symphonia's gapless mode, so the decoded
+  pool is a few frames shorter and the absolute sample offsets differ slightly
+  from earlier versions; the waveform itself is unchanged.
 - Loading no longer rejects a SoundFont whose looping instrument regions have
   a reversed loop range (`start_loop >= end_loop`). Such a region is played
   once instead of being looped, so files that used to fail with

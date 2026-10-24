@@ -12,12 +12,14 @@ keywords = ["audio", "midi", "music", "soundfont", "synthesizer"]
 categories = ["multimedia::audio"]
 
 [dependencies]
-lewton = { version = "0.10", optional = true }
+symphonia-codec-vorbis = { version = "0.5", default-features = false, optional = true }
+symphonia-core = { version = "0.5", default-features = false, optional = true }
+symphonia-format-ogg = { version = "0.5", default-features = false, optional = true }
 
 [features]
 # Enables loading of SoundFont3 (.sf3) files, whose samples are compressed
-# with Ogg Vorbis. Pulls in the pure-Rust `lewton` decoder.
-sf3 = ["dep:lewton"]
+# with Ogg Vorbis. Pulls in the pure-Rust Symphonia decoder.
+sf3 = ["dep:symphonia-codec-vorbis", "dep:symphonia-core", "dep:symphonia-format-ogg"]
 
 [lints]
 workspace = true

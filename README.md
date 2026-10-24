@@ -14,7 +14,7 @@ RustySynth-ext is a SoundFont MIDI synthesizer written in pure Rust, ported from
 * Suitable for both real-time and offline synthesis.
 * Supports standard MIDI files with additional features including dynamic tempo changing.
 * No dependencies other than the standard library.
-* Optional SoundFont3 (`.sf3`) support via the `sf3` cargo feature (uses the pure-Rust `lewton` Ogg Vorbis decoder).
+* Optional SoundFont3 (`.sf3`) support via the `sf3` cargo feature (uses the pure-Rust Symphonia Ogg Vorbis decoder, and decodes the samples in parallel).
 
 
 

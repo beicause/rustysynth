@@ -16,7 +16,7 @@ SoundFont3 (`.sf3`) support on top of the upstream SoundFont2 (`.sf2`) support.
 
 SF3 SoundFonts store their samples as Ogg Vorbis streams instead of raw PCM,
 roughly 10x smaller than the equivalent SF2. Loading them is opt-in because it
-adds the pure-Rust [`lewton`](https://crates.io/crates/lewton) decoder:
+adds the pure-Rust [Symphonia](https://crates.io/crates/symphonia) decoder:
 
 ```
 cargo add rustysynth-ext --features sf3
@@ -24,7 +24,8 @@ cargo add rustysynth-ext --features sf3
 
 With the `sf3` feature enabled, `SoundFont::new` loads `.sf3` files
 transparently, decompressing every sample into the same 16-bit PCM layout used
-by `.sf2` files.
+by `.sf2` files. The samples are independent streams, so they are decoded on up
+to eight threads at once.
 
 
 

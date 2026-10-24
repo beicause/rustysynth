@@ -38,14 +38,14 @@ fn soundfont_info() {
     assert_eq!(info.get_comments().len(), 83);
     assert_eq!(info.get_tools(), "SFEDT v1.28:SFEDT v1.36:");
 
-    assert_eq!(sf.get_wave_data().len(), 62204214);
+    assert_eq!(sf.get_wave_data().len(), 62202396);
 
     let mut sum: i32 = 0;
     for value in sf.get_wave_data().iter() {
         sum += *value as i32;
     }
     assert!(
-        (sum as i64 - 411233721).abs() <= 41123,
+        (sum as i64 - 410787939).abs() <= 41078,
         "decoded PCM sum ({sum}) differs from the snapshot by more than 0.01%"
     );
 }
