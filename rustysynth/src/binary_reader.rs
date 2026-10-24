@@ -5,6 +5,9 @@ use std::io::Read;
 
 use crate::four_cc::FourCC;
 
+/// Size of the stack buffer used when streaming bulky chunks.
+const CHUNK_BUFFER_SIZE: usize = 1 << 16;
+
 #[non_exhaustive]
 pub(crate) struct BinaryReader {}
 
@@ -127,7 +130,7 @@ impl BinaryReader {
         Ok(())
     }
 
-    /// Reads a chunk of raw bytes as-is.
+    /// Reads exactly `size` bytes and hands them to `sink` in chunks.
     ///
     /// The sample data of a SoundFont2 is little-endian 16-bit PCM, while a
     /// SoundFont3 stores Ogg Vorbis streams instead, so the sample data chunk
@@ -164,6 +167,27 @@ impl BinaryReader {
         }
 
         Ok(data)
+    }
+
+    /// Bulky chunks are streamed through a stack buffer instead of being
+    /// materialised as one allocation that is then copied again: the sample
+    /// data of a General MIDI font is well over 100 MB.
+    pub(crate) fn read_chunked<R: Read>(
+        reader: &mut R,
+        size: usize,
+        mut sink: impl FnMut(&[u8]),
+    ) -> Result<(), io::Error> {
+        let mut buffer: [u8; CHUNK_BUFFER_SIZE] = [0; CHUNK_BUFFER_SIZE];
+        let mut remaining = size;
+
+        while remaining > 0 {
+            let length = cmp::min(remaining, CHUNK_BUFFER_SIZE);
+            reader.read_exact(&mut buffer[..length])?;
+            sink(&buffer[..length]);
+            remaining -= length;
+        }
+
+        Ok(())
     }
 
     /// Skips the pad byte that RIFF inserts after a chunk of an odd size.

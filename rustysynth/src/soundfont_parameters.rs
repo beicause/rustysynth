@@ -10,6 +10,7 @@ use crate::preset::Preset;
 use crate::preset_info::PresetInfo;
 use crate::read_counter::ReadCounter;
 use crate::sample_header::SampleHeader;
+use crate::soundfont_sampledata::RawSampleData;
 use crate::soundfont_sampledata::SoundFontSampleData;
 use crate::zone::Zone;
 use crate::zone_info::ZoneInfo;
@@ -30,7 +31,7 @@ impl SoundFontParameters {
     /// offsets when they are created.
     pub(crate) fn load<R: Read>(
         reader: &mut R,
-        sample_data: Vec<u8>,
+        sample_data: RawSampleData,
     ) -> Result<(Self, SoundFontSampleData), SoundFontError> {
         let chunk_id = BinaryReader::read_four_cc(reader)?;
         if chunk_id != b"LIST" {

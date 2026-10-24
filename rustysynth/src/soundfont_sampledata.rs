@@ -1,3 +1,4 @@
+use std::cmp;
 use std::io::Read;
 
 use crate::binary_reader::BinaryReader;
@@ -6,6 +7,19 @@ use crate::four_cc::FourCC;
 use crate::read_counter::ReadCounter;
 use crate::sample_header::SampleHeader;
 
+/// The sample data of a SoundFont as it comes off the stream.
+///
+/// The two formats are told apart by the `OggS` magic, but a SoundFont2 chunk
+/// is decoded as it is read: the sample data of a General MIDI font is over
+/// 100 MB, so buffering the raw bytes and converting them afterwards would
+/// copy it twice (and touch an equal amount of zeroed memory first).
+pub(crate) enum RawSampleData {
+    /// SoundFont2: raw little-endian 16-bit PCM, already widened to `i16`.
+    Pcm(Vec<i16>),
+    /// SoundFont3: concatenated Ogg Vorbis streams, still compressed.
+    Compressed(Vec<u8>),
+}
+
 #[non_exhaustive]
 pub(crate) struct SoundFontSampleData {
     pub bits_per_sample: i32,
@@ -13,13 +27,13 @@ pub(crate) struct SoundFontSampleData {
 }
 
 impl SoundFontSampleData {
-    /// Reads the `sdta` LIST chunk and returns the raw `smpl` sub-chunk bytes.
+    /// Reads the `sdta` LIST chunk and returns its `smpl` sub-chunk.
     ///
-    /// The bytes are either little-endian 16-bit PCM (SoundFont2) or
-    /// concatenated Ogg Vorbis streams (SoundFont3); they are turned into PCM
-    /// by [`SoundFontSampleData::new`]. The 24-bit `sm24` sub-chunk, which
-    /// only applies to SoundFont2, is discarded.
-    pub(crate) fn read<R: Read>(reader: &mut R) -> Result<Vec<u8>, SoundFontError> {
+    /// The chunk is either little-endian 16-bit PCM (SoundFont2) or
+    /// concatenated Ogg Vorbis streams (SoundFont3); it is turned into PCM by
+    /// [`SoundFontSampleData::new`]. The 24-bit `sm24` sub-chunk, which only
+    /// applies to SoundFont2, is discarded.
+    pub(crate) fn read<R: Read>(reader: &mut R) -> Result<RawSampleData, SoundFontError> {
         let chunk_id = BinaryReader::read_four_cc(reader)?;
         if chunk_id != b"LIST" {
             return Err(SoundFontError::ListChunkNotFound);
@@ -36,7 +50,7 @@ impl SoundFontSampleData {
             });
         }
 
-        let mut sample_data: Option<Vec<u8>> = None;
+        let mut sample_data: Option<RawSampleData> = None;
 
         while reader.bytes_read() < end {
             let id = BinaryReader::read_four_cc(reader)?;
@@ -48,7 +62,7 @@ impl SoundFontSampleData {
                         return Err(SoundFontError::InvalidSampleData);
                     }
 
-                    sample_data = Some(BinaryReader::read_raw_data(reader, size)?)
+                    sample_data = Some(Self::read_smpl(reader, size)?)
                 }
                 b"sm24" => BinaryReader::discard_data(reader, size)?,
                 _ => return Err(SoundFontError::ListContainsUnknownId(id)),
@@ -64,6 +78,51 @@ impl SoundFontSampleData {
         sample_data.ok_or(SoundFontError::SampleDataNotFound)
     }
 
+    /// Reads the `smpl` sub-chunk, decoding SoundFont2 PCM as it goes.
+    ///
+    /// A SoundFont2 chunk is widened to `i16` while it is being streamed, so
+    /// neither the zero-initialised byte buffer nor the second full-size copy
+    /// of a read-then-convert approach is ever allocated. A SoundFont3 chunk is
+    /// kept as bytes, since it is decompressed sample by sample later.
+    fn read_smpl<R: Read>(reader: &mut R, size: usize) -> Result<RawSampleData, SoundFontError> {
+        // SoundFont3 compressed samples start with the "OggS" magic.
+        let mut magic: [u8; 4] = [0; 4];
+        let head = cmp::min(size, magic.len());
+        reader.read_exact(&mut magic[..head])?;
+
+        if head == magic.len() && magic == *b"OggS" {
+            let mut data: Vec<u8> = Vec::with_capacity(size);
+            data.extend_from_slice(&magic);
+            BinaryReader::read_chunked(reader, size - head, |bytes| data.extend_from_slice(bytes))?;
+            return Ok(RawSampleData::Compressed(data));
+        }
+
+        let mut wave_data: Vec<i16> = Vec::with_capacity(size / 2);
+        // An odd-sized chunk is legal, at least for SoundFont3, so the trailing
+        // byte of one read has to be paired with the head of the next one.
+        let mut carry: Option<u8> = None;
+
+        let mut push = |bytes: &[u8]| {
+            let mut bytes = bytes;
+
+            if let Some(low) = carry.take()
+                && let Some((&high, rest)) = bytes.split_first()
+            {
+                wave_data.push(i16::from_le_bytes([low, high]));
+                bytes = rest;
+            }
+
+            let (pairs, rest) = bytes.as_chunks::<2>();
+            wave_data.extend(pairs.iter().map(|pair| i16::from_le_bytes(*pair)));
+            carry = rest.first().copied();
+        };
+
+        push(&magic[..head]);
+        BinaryReader::read_chunked(reader, size - head, &mut push)?;
+
+        Ok(RawSampleData::Pcm(wave_data))
+    }
+
     /// Turns the raw `smpl` bytes into 16-bit PCM sample data.
     ///
     /// SoundFont2 stores the samples as raw little-endian 16-bit PCM. A
@@ -72,38 +131,26 @@ impl SoundFontSampleData {
     /// magic); those are decompressed here, which also rewrites `sample_headers`
     /// so that they reference the decoded data instead of the compressed bytes.
     pub(crate) fn new(
-        sample_data: Vec<u8>,
+        sample_data: RawSampleData,
         sample_headers: &mut [SampleHeader],
     ) -> Result<Self, SoundFontError> {
-        // SoundFont3 compressed samples start with the "OggS" magic.
-        if sample_data.len() >= 4 && &sample_data[..4] == b"OggS" {
-            #[cfg(not(feature = "sf3"))]
-            {
-                let _ = sample_headers;
-                return Err(SoundFontError::UnsupportedSampleFormat);
+        let wave_data = match sample_data {
+            RawSampleData::Compressed(sample_data) => {
+                #[cfg(not(feature = "sf3"))]
+                {
+                    let _ = (sample_data, sample_headers);
+                    return Err(SoundFontError::UnsupportedSampleFormat);
+                }
+
+                #[cfg(feature = "sf3")]
+                {
+                    crate::soundfont_sf3::decode_vorbis_samples(&sample_data, sample_headers)?
+                }
             }
 
-            #[cfg(feature = "sf3")]
-            {
-                let wave_data =
-                    crate::soundfont_sf3::decode_vorbis_samples(&sample_data, sample_headers)?;
-                return Ok(Self {
-                    bits_per_sample: 16,
-                    wave_data,
-                });
-            }
-        }
-
-        // SoundFont2: the sample data is raw little-endian 16-bit PCM.
-        // The output size is known, so allocate exactly once.
-        let mut wave_data: Vec<i16> = Vec::with_capacity(sample_data.len() / 2);
-        wave_data.extend(
-            sample_data
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|bytes| i16::from_le_bytes(*bytes)),
-        );
+            // SoundFont2 data is already decoded, at the right width.
+            RawSampleData::Pcm(wave_data) => wave_data,
+        };
 
         if wave_data.len() < 2 {
             return Err(SoundFontError::SampleDataNotFound);
