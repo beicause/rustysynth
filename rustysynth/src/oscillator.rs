@@ -303,6 +303,33 @@ mod tests {
         }
     }
 
+    // A raised pitch advances the read position by more than one frame per
+    // sample, so a block can cross the loop end in the middle of it. The fast
+    // path is only taken while the whole block stays inside the loop, so the
+    // frames it renders must match the ones the per-sample path renders for the
+    // same positions.
+    #[test]
+    fn test_a_raised_pitch_crossing_the_loop_end_matches_the_per_sample_path() {
+        let data: Vec<i16> = (0..4096).map(|i| ((i * 13) % 2000) as i16).collect();
+
+        // Two semitones above the root key at this scale tuning is a step of
+        // two frames, so a 64 sample block walks past the 100 frame loop.
+        let mut one_block = oscillator(1000, 1100, 44100);
+        let mut block = vec![0_f32; 64];
+        assert!(one_block.process(&data, &mut block, 72_f32));
+
+        let mut per_sample = oscillator(1000, 1100, 44100);
+        let mut single = vec![0_f32; 1];
+        let mut expected = Vec::with_capacity(block.len());
+
+        for _ in 0..block.len() {
+            assert!(per_sample.process(&data, &mut single, 72_f32));
+            expected.push(single[0]);
+        }
+
+        assert_eq!(block, expected);
+    }
+
     // A corrupt sample rate or pitch must not leave the read position stall,
     // rewind or overflow, so the voice is dropped instead (#57).
     #[test]
