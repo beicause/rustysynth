@@ -49,6 +49,12 @@ pub(crate) fn decode_vorbis_samples(
     smpl: &[u8],
     sample_headers: &mut [SampleHeader],
 ) -> Result<Vec<i16>, SoundFontError> {
+    // A file without sample headers has nothing to decode, and the parallel
+    // path below would split an empty list into chunks of zero.
+    if sample_headers.is_empty() {
+        return Ok(Vec::new());
+    }
+
     let decoded = decode_samples(smpl, sample_headers)?;
 
     // Every sample is followed by the guard frames, and the total length is
@@ -165,13 +171,17 @@ fn decode_sample(smpl: &[u8], header: &SampleHeader) -> Result<Vec<i16>, SoundFo
         )));
     }
 
+    // A loop point past the end of the decoded sample is caught by
+    // `SoundFont::sanity_check` once every sample is in the pool, which is why
+    // only the lower bound is checked here: at this point the decoded length of
+    // the sample is not known yet.
+    //
     // The loop points of a SoundFont3 are offsets relative to the start of
-    // the decompressed sample, so they must not be negative. The sanity
-    // check in `SoundFont::sanity_check` only catches a negative offset on
-    // the first sample (where it is not shifted by the pool base), so
-    // reject them here for every sample before adding the base offset.
-    // This mirrors the SoundFont2 path, which also rejects negative loop
-    // points unconditionally.
+    // the decompressed sample, so they must not be negative. `sanity_check`
+    // only catches a negative offset on the sample that lands at the base of
+    // the pool, since every other one is shifted by its own base first, so
+    // reject them here for every sample before the base is added. This mirrors
+    // the SoundFont2 path, which also rejects negative loop points.
     if header.start_loop < 0 || header.end_loop < 0 {
         return Err(SoundFontError::SampleDecompressionFailed(format!(
             "the loop points of sample '{}' are invalid ({}..{})",
@@ -179,14 +189,16 @@ fn decode_sample(smpl: &[u8], header: &SampleHeader) -> Result<Vec<i16>, SoundFo
         )));
     }
 
-    decode_stream(&smpl[start as usize..end as usize])
+    // The stream has to be owned to satisfy the `'static` bound of the
+    // media source, so this is the one copy the compressed data goes through.
+    decode_stream(smpl[start as usize..end as usize].to_vec())
 }
 
 /// Decompresses one Ogg Vorbis stream into 16-bit PCM samples.
 ///
 /// SoundFont samples are mono, so the interleaved read of a mono stream is the
 /// sample itself.
-fn decode_stream(stream: &[u8]) -> Result<Vec<i16>, SoundFontError> {
+fn decode_stream(stream: Vec<u8>) -> Result<Vec<i16>, SoundFontError> {
     // Gapless trimming makes the decoder drop the encoder padding of the last
     // Ogg page, which is what defines the length of a sample here: without it
     // every sample would carry up to a codec block of extra frames.
@@ -195,10 +207,10 @@ fn decode_stream(stream: &[u8]) -> Result<Vec<i16>, SoundFontError> {
         ..Default::default()
     };
 
-    // `MediaSourceStream` takes a `'static` source, so the stream is copied out of
-    // the compressed chunk first. The copy is a couple of megabytes for a whole
-    // General MIDI font, far below the cost of decoding it.
-    let source = MediaSourceStream::new(Box::new(Cursor::new(stream.to_vec())), Default::default());
+    // `MediaSourceStream` takes a `'static` source, so the caller copies the
+    // compressed stream out of the chunk and hands it over. The decoder reads it
+    // once, so owning it saves the second copy of a read-then-decode approach.
+    let source = MediaSourceStream::new(Box::new(Cursor::new(stream)), Default::default());
     let mut reader = OggReader::try_new(source, &options).map_err(decompression_error)?;
 
     let track = reader.default_track().ok_or_else(|| {
