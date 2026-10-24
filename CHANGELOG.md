@@ -1,5 +1,10 @@
 # Unreleased
 
+- Rendering a block is about 1.7x faster: a voice is mixed into both channels in
+  a single pass, the voices of a block are filtered four at a time, and the
+  hot loops of the oscillator, the biquad filter and the reverb keep their state
+  in locals instead of reloading it from `self` for every sample. The rendered
+  waveform is bit for bit what it was for the filter and the reverb changes.
 - SoundFont3 samples are now decoded with the pure-Rust Symphonia decoder
   instead of `lewton`, and the independent sample streams are decoded in
   parallel on up to eight threads. Loading `FluidR3Mono_GM.sf3` costs about
