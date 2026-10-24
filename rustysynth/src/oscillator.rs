@@ -201,6 +201,32 @@ impl Oscillator {
             return false;
         }
 
+        // A block that stays two samples short of the loop end needs neither the
+        // wrap test nor the test for the second index falling off the loop, which
+        // is the case for almost every block. Both are left out of the loop
+        // below, which removes a compare, a conditional subtract and a compare
+        // with a conditional add from every sample.
+        let last_position_fp = (block.len() as i64 - 1)
+            .saturating_mul(pitch_ratio_fp)
+            .saturating_add(position_fp);
+        if last_position_fp < end_loop_fp - Oscillator::FRAC_UNIT {
+            for sample in block.iter_mut() {
+                let index1 = (position_fp >> Oscillator::FRAC_BITS) as usize;
+
+                let x1 = data[index1] as i64;
+                let x2 = data[index1 + 1] as i64;
+                let a_fp = position_fp & (Oscillator::FRAC_UNIT - 1);
+                *sample = Oscillator::FP_TO_SAMPLE
+                    * ((x1 << Oscillator::FRAC_BITS) + a_fp * (x2 - x1)) as f32;
+
+                position_fp += pitch_ratio_fp;
+            }
+
+            self.position_fp = position_fp;
+
+            return true;
+        }
+
         for sample in block.iter_mut() {
             if position_fp >= end_loop_fp {
                 // A loop shorter than the distance the read position advances per
