@@ -16,8 +16,7 @@ waveform bit for bit as the previous release; this fork adds:
 
 * **SoundFont3 support** behind the `sf3` feature, decoding the Ogg Vorbis
   samples with the pure-Rust Symphonia decoder in parallel on up to eight
-  threads. A decoded sample differs from the `lewton` output of the earlier
-  releases by at most one LSB.
+  threads.
 * **Faster rendering and loading.** A voice is mixed into both channels in a
   single pass, and the hot loops of the oscillator, the biquad filter and the
   reverb keep their state in locals. Loading a font reserves its buffers once
