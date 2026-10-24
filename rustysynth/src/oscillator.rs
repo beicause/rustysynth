@@ -122,7 +122,11 @@ impl Oscillator {
         // Restrict the slice to the sample data the loop can touch, so the bounds
         // checks on `data` fold away. If the data is shorter than `end` the
         // original indexing behaviour (and its panic) is kept.
-        let data = if data.len() > end { &data[..end + 1] } else { data };
+        let data = if data.len() > end {
+            &data[..end + 1]
+        } else {
+            data
+        };
 
         let mut position_fp = self.position_fp;
 
@@ -142,8 +146,8 @@ impl Oscillator {
             let x1 = data[index] as i64;
             let x2 = data[index + 1] as i64;
             let a_fp = position_fp & (Oscillator::FRAC_UNIT - 1);
-            block[t] =
-                Oscillator::FP_TO_SAMPLE * ((x1 << Oscillator::FRAC_BITS) + a_fp * (x2 - x1)) as f32;
+            block[t] = Oscillator::FP_TO_SAMPLE
+                * ((x1 << Oscillator::FRAC_BITS) + a_fp * (x2 - x1)) as f32;
 
             position_fp += pitch_ratio_fp;
         }
@@ -201,8 +205,8 @@ impl Oscillator {
             let x1 = data[index1] as i64;
             let x2 = data[index2] as i64;
             let a_fp = position_fp & (Oscillator::FRAC_UNIT - 1);
-            *sample =
-                Oscillator::FP_TO_SAMPLE * ((x1 << Oscillator::FRAC_BITS) + a_fp * (x2 - x1)) as f32;
+            *sample = Oscillator::FP_TO_SAMPLE
+                * ((x1 << Oscillator::FRAC_BITS) + a_fp * (x2 - x1)) as f32;
 
             position_fp += pitch_ratio_fp;
         }

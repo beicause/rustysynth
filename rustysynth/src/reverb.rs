@@ -140,18 +140,19 @@ impl Reverb {
             *rsample = 0_f32;
         }
 
-        for cf in self.cfs_l.iter_mut() {
-            cf.process(input, output_left);
-        }
-
+        // The eight comb filters of one channel are independent of each other,
+        // so the bank is advanced one sample at a time with all of its filters
+        // in flight. Each filter is a chain of dependent multiply-adds, which
+        // leaves the multiplier mostly idle when a filter is run to completion
+        // on its own; interleaving keeps several chains in flight. The all-pass
+        // filters consume the output of the combs and each other, so they stay
+        // sequential.
+        Reverb::process_comb_filters(&mut self.cfs_l, input, output_left);
         for apf in self.apfs_l.iter_mut() {
             apf.process(output_left);
         }
 
-        for cf in self.cfs_r.iter_mut() {
-            cf.process(input, output_right);
-        }
-
+        Reverb::process_comb_filters(&mut self.cfs_r, input, output_right);
         for apf in self.apfs_r.iter_mut() {
             apf.process(output_right);
         }
@@ -164,6 +165,66 @@ impl Reverb {
                 output_left[t] = left * self.wet1 + right * self.wet2;
                 output_right[t] = right * self.wet1 + left * self.wet2;
             }
+        }
+    }
+
+    /// Runs the eight comb filters of one channel in lock step, one sample at a
+    /// time, so that their independent feedback chains interleave.
+    fn process_comb_filters(filters: &mut [CombFilter; 8], input: &[f32], output: &mut [f32]) {
+        let mut buffer_index = [0_usize; 8];
+        let mut buffer_length = [0_usize; 8];
+        let mut filter_store = [0_f32; 8];
+        let mut feedback = [0_f32; 8];
+        let mut damp1 = [0_f32; 8];
+        let mut damp2 = [0_f32; 8];
+
+        for (i, filter) in filters.iter().enumerate() {
+            buffer_length[i] = filter.buffer.len();
+            filter_store[i] = filter.filter_store;
+            feedback[i] = filter.feedback;
+            damp1[i] = filter.damp1;
+            damp2[i] = filter.damp2;
+            buffer_index[i] = filter.buffer_index;
+        }
+
+        for (input, output) in input.iter().zip(output.iter_mut()) {
+            let mut value_out = *output;
+
+            for i in 0..8 {
+                if buffer_index[i] == buffer_length[i] {
+                    buffer_index[i] = 0;
+                }
+
+                let index = buffer_index[i];
+                let slot = &mut filters[i].buffer[index];
+                buffer_index[i] = index + 1;
+
+                // The following ifs are to avoid performance problem due to denormalized number.
+                // The original implementation uses unsafe cast to detect denormalized number.
+                // I tried to reproduce the original implementation using Unsafe.As,
+                // but the simple Math.Abs version was faster according to some benchmarks.
+
+                let mut value = *slot;
+                if value.abs() < 1.0E-6_f32 {
+                    value = 0_f32;
+                }
+
+                let mut store = (value * damp2[i]) + (filter_store[i] * damp1[i]);
+                if store.abs() < 1.0E-6_f32 {
+                    store = 0_f32;
+                }
+                filter_store[i] = store;
+
+                *slot = *input + (store * feedback[i]);
+                value_out += value;
+            }
+
+            *output = value_out;
+        }
+
+        for (i, filter) in filters.iter_mut().enumerate() {
+            filter.buffer_index = buffer_index[i];
+            filter.filter_store = filter_store[i];
         }
     }
 
@@ -243,57 +304,6 @@ impl CombFilter {
         }
 
         self.filter_store = 0_f32;
-    }
-
-    fn process(&mut self, input_block: &[f32], output_block: &mut [f32]) {
-        let buffer_length = self.buffer.len();
-        let output_block_length = output_block.len();
-
-        // Hoist the coefficients and the filter state into locals, and walk the
-        // three buffers with iterators so no bounds check is left in the loop.
-        let feedback = self.feedback;
-        let damp1 = self.damp1;
-        let damp2 = self.damp2;
-        let mut filter_store = self.filter_store;
-
-        let mut block_index: usize = 0;
-        while block_index < output_block_length {
-            if self.buffer_index == buffer_length {
-                self.buffer_index = 0;
-            }
-
-            let src_rem = buffer_length - self.buffer_index;
-            let dst_rem = output_block_length - block_index;
-            let rem = cmp::min(src_rem, dst_rem);
-
-            let inputs = &input_block[block_index..block_index + rem];
-            let outputs = &mut output_block[block_index..block_index + rem];
-            let buffer = &mut self.buffer[self.buffer_index..self.buffer_index + rem];
-
-            for ((slot, input), output) in buffer.iter_mut().zip(inputs).zip(outputs) {
-                // The following ifs are to avoid performance problem due to denormalized number.
-                // The original implementation uses unsafe cast to detect denormalized number.
-                // I tried to reproduce the original implementation using Unsafe.As,
-                // but the simple Math.Abs version was faster according to some benchmarks.
-
-                let mut value = *slot;
-                if value.abs() < 1.0E-6_f32 {
-                    value = 0_f32;
-                }
-
-                filter_store = (value * damp2) + (filter_store * damp1);
-                if filter_store.abs() < 1.0E-6_f32 {
-                    filter_store = 0_f32;
-                }
-
-                *slot = *input + (filter_store * feedback);
-                *output += value;
-            }
-
-            self.filter_store = filter_store;
-            self.buffer_index += rem;
-            block_index += rem;
-        }
     }
 
     fn set_feedback(&mut self, value: f32) {
