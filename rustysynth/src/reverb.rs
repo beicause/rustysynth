@@ -249,6 +249,13 @@ impl CombFilter {
         let buffer_length = self.buffer.len();
         let output_block_length = output_block.len();
 
+        // Hoist the coefficients and the filter state into locals, and walk the
+        // three buffers with iterators so no bounds check is left in the loop.
+        let feedback = self.feedback;
+        let damp1 = self.damp1;
+        let damp2 = self.damp2;
+        let mut filter_store = self.filter_store;
+
         let mut block_index: usize = 0;
         while block_index < output_block_length {
             if self.buffer_index == buffer_length {
@@ -259,31 +266,31 @@ impl CombFilter {
             let dst_rem = output_block_length - block_index;
             let rem = cmp::min(src_rem, dst_rem);
 
-            for t in 0..rem {
-                let block_pos = block_index + t;
-                let buffer_pos = self.buffer_index + t;
+            let inputs = &input_block[block_index..block_index + rem];
+            let outputs = &mut output_block[block_index..block_index + rem];
+            let buffer = &mut self.buffer[self.buffer_index..self.buffer_index + rem];
 
-                let input = input_block[block_pos];
-
+            for ((slot, input), output) in buffer.iter_mut().zip(inputs).zip(outputs) {
                 // The following ifs are to avoid performance problem due to denormalized number.
                 // The original implementation uses unsafe cast to detect denormalized number.
                 // I tried to reproduce the original implementation using Unsafe.As,
                 // but the simple Math.Abs version was faster according to some benchmarks.
 
-                let mut output = self.buffer[buffer_pos];
-                if output.abs() < 1.0E-6_f32 {
-                    output = 0_f32;
+                let mut value = *slot;
+                if value.abs() < 1.0E-6_f32 {
+                    value = 0_f32;
                 }
 
-                self.filter_store = (output * self.damp2) + (self.filter_store * self.damp1);
-                if self.filter_store.abs() < 1.0E-6_f32 {
-                    self.filter_store = 0_f32;
+                filter_store = (value * damp2) + (filter_store * damp1);
+                if filter_store.abs() < 1.0E-6_f32 {
+                    filter_store = 0_f32;
                 }
 
-                self.buffer[buffer_pos] = input + (self.filter_store * self.feedback);
-                output_block[block_pos] += output;
+                *slot = *input + (filter_store * feedback);
+                *output += value;
             }
 
+            self.filter_store = filter_store;
             self.buffer_index += rem;
             block_index += rem;
         }
@@ -329,6 +336,8 @@ impl AllPassFilter {
         let buffer_length = self.buffer.len();
         let block_length = block.len();
 
+        let feedback = self.feedback;
+
         let mut block_index: usize = 0;
         while block_index < block_length {
             if self.buffer_index == buffer_length {
@@ -339,19 +348,19 @@ impl AllPassFilter {
             let dst_rem = block_length - block_index;
             let rem = cmp::min(src_rem, dst_rem);
 
-            for t in 0..rem {
-                let block_pos = block_index + t;
-                let buffer_pos = self.buffer_index + t;
+            let samples = &mut block[block_index..block_index + rem];
+            let buffer = &mut self.buffer[self.buffer_index..self.buffer_index + rem];
 
-                let input = block[block_pos];
+            for (sample, slot) in samples.iter_mut().zip(buffer.iter_mut()) {
+                let input = *sample;
 
-                let mut bufout = self.buffer[buffer_pos];
+                let mut bufout = *slot;
                 if bufout.abs() < 1.0E-6_f32 {
                     bufout = 0_f32;
                 }
 
-                block[block_pos] = bufout - input;
-                self.buffer[buffer_pos] = input + (bufout * self.feedback);
+                *sample = bufout - input;
+                *slot = input + (bufout * feedback);
             }
 
             self.buffer_index += rem;

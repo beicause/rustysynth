@@ -88,18 +88,33 @@ impl BiQuadFilter {
         let block_length = block.len();
 
         if self.active {
-            for input in block.iter_mut().take(block_length) {
-                let output = self.a0 * *input + self.a1 * self.x1 + self.a2 * self.x2
-                    - self.a3 * self.y1
-                    - self.a4 * self.y2;
+            // Hoist the coefficients and the filter state into locals so the loop
+            // body does not reload them from memory on every sample.
+            let a0 = self.a0;
+            let a1 = self.a1;
+            let a2 = self.a2;
+            let a3 = self.a3;
+            let a4 = self.a4;
+            let mut x1 = self.x1;
+            let mut x2 = self.x2;
+            let mut y1 = self.y1;
+            let mut y2 = self.y2;
 
-                self.x2 = self.x1;
-                self.x1 = *input;
-                self.y2 = self.y1;
-                self.y1 = output;
+            for input in block.iter_mut() {
+                let output = a0 * *input + a1 * x1 + a2 * x2 - a3 * y1 - a4 * y2;
+
+                x2 = x1;
+                x1 = *input;
+                y2 = y1;
+                y1 = output;
 
                 *input = output;
             }
+
+            self.x1 = x1;
+            self.x2 = x2;
+            self.y1 = y1;
+            self.y2 = y2;
         } else {
             self.x2 = block[block_length - 2];
             self.x1 = block[block_length - 1];

@@ -117,9 +117,19 @@ impl Oscillator {
     }
 
     fn fill_block_no_loop(&mut self, data: &[i16], block: &mut [f32], pitch_ratio_fp: i64) -> bool {
+        let end = self.end as usize;
+
+        // Restrict the slice to the sample data the loop can touch, so the bounds
+        // checks on `data` fold away. If the data is shorter than `end` the
+        // original indexing behaviour (and its panic) is kept.
+        let data = if data.len() > end { &data[..end + 1] } else { data };
+
+        let mut position_fp = self.position_fp;
+
         for t in 0..block.len() {
-            let index = (self.position_fp >> Oscillator::FRAC_BITS) as usize;
-            if index >= self.end as usize {
+            let index = (position_fp >> Oscillator::FRAC_BITS) as usize;
+            if index >= end {
+                self.position_fp = position_fp;
                 if t > 0 {
                     let len = block.len();
                     block[t..len].fill(0_f32);
@@ -131,12 +141,14 @@ impl Oscillator {
 
             let x1 = data[index] as i64;
             let x2 = data[index + 1] as i64;
-            let a_fp = self.position_fp & (Oscillator::FRAC_UNIT - 1);
-            block[t] = Oscillator::FP_TO_SAMPLE
-                * ((x1 << Oscillator::FRAC_BITS) + a_fp * (x2 - x1)) as f32;
+            let a_fp = position_fp & (Oscillator::FRAC_UNIT - 1);
+            block[t] =
+                Oscillator::FP_TO_SAMPLE * ((x1 << Oscillator::FRAC_BITS) + a_fp * (x2 - x1)) as f32;
 
-            self.position_fp += pitch_ratio_fp;
+            position_fp += pitch_ratio_fp;
         }
+
+        self.position_fp = position_fp;
 
         true
     }
@@ -147,9 +159,20 @@ impl Oscillator {
         block: &mut [f32],
         pitch_ratio_fp: i64,
     ) -> bool {
+        let end_loop = self.end_loop as usize;
         let end_loop_fp = (self.end_loop as i64) << Oscillator::FRAC_BITS;
         let loop_length = (self.end_loop - self.start_loop) as i64;
         let loop_length_fp = loop_length << Oscillator::FRAC_BITS;
+        let loop_length_usize = loop_length as usize;
+
+        // Slicing to the loop end lets the optimizer prove that both indices are
+        // in bounds, which removes the per-sample bounds checks.
+        let data = match data.get(..end_loop) {
+            Some(sliced) => sliced,
+            None => data,
+        };
+
+        let mut position_fp = self.position_fp;
 
         // Looping is only enabled for a non-empty loop range, but a corrupt
         // region must not be able to divide by zero below.
@@ -158,31 +181,33 @@ impl Oscillator {
         }
 
         for sample in block.iter_mut() {
-            if self.position_fp >= end_loop_fp {
+            if position_fp >= end_loop_fp {
                 // A loop shorter than the distance the read position advances per
                 // sample needs more than one wrap. Wrapping only once used to leave
                 // the position past the loop and eventually read out of bounds.
                 // The remainder keeps the arithmetic identical for loops that are
                 // long enough, so healthy SoundFonts render bit for bit the same.
                 // https://github.com/sinshu/rustysynth/issues/57
-                let overshoot = self.position_fp - end_loop_fp;
-                self.position_fp = end_loop_fp - loop_length_fp + overshoot % loop_length_fp;
+                let overshoot = position_fp - end_loop_fp;
+                position_fp = end_loop_fp - loop_length_fp + overshoot % loop_length_fp;
             }
 
-            let index1 = (self.position_fp >> Oscillator::FRAC_BITS) as usize;
+            let index1 = (position_fp >> Oscillator::FRAC_BITS) as usize;
             let mut index2 = index1 + 1;
-            if index2 >= self.end_loop as usize {
-                index2 -= loop_length as usize;
+            if index2 >= end_loop {
+                index2 -= loop_length_usize;
             }
 
             let x1 = data[index1] as i64;
             let x2 = data[index2] as i64;
-            let a_fp = self.position_fp & (Oscillator::FRAC_UNIT - 1);
-            *sample = Oscillator::FP_TO_SAMPLE
-                * ((x1 << Oscillator::FRAC_BITS) + a_fp * (x2 - x1)) as f32;
+            let a_fp = position_fp & (Oscillator::FRAC_UNIT - 1);
+            *sample =
+                Oscillator::FP_TO_SAMPLE * ((x1 << Oscillator::FRAC_BITS) + a_fp * (x2 - x1)) as f32;
 
-            self.position_fp += pitch_ratio_fp;
+            position_fp += pitch_ratio_fp;
         }
+
+        self.position_fp = position_fp;
 
         true
     }
