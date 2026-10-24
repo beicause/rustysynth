@@ -9,6 +9,31 @@ RustySynth-ext is a SoundFont MIDI synthesizer written in pure Rust, ported from
 
 
 
+## Differences from Upstream
+
+The public API follows upstream, and the optimized renderer produces the same
+waveform bit for bit as the previous release; this fork adds:
+
+* **SoundFont3 support** behind the `sf3` feature, decoding the Ogg Vorbis
+  samples with the pure-Rust Symphonia decoder in parallel on up to eight
+  threads. A decoded sample differs from the `lewton` output of the earlier
+  releases by at most one LSB.
+* **Faster rendering and loading.** A voice is mixed into both channels in a
+  single pass, and the hot loops of the oscillator, the biquad filter and the
+  reverb keep their state in locals. Loading a font reserves its buffers once
+  and streams the sample data instead of copying it through a temporary buffer.
+* **A programmatic MIDI API.** `MidiMessage` is public, and `MidiFile` can be
+  built from any iterator of `(time, message)` pairs with `new_with_events` and
+  `extend_events`, without an intermediate `Vec`.
+* **Hardened parsing.** Malformed SoundFonts and MIDI files are reported as
+  errors instead of panicking, aborting or hanging. See the changelog for the
+  full list.
+* **Golden tests and a benchmark** for the workspace: reference MIDI is rendered
+  with a reference font and compared against snapshots, and the benchmark
+  reports the CPU time of rendering and loading.
+
+
+
 ## Features
 
 * Suitable for both real-time and offline synthesis.

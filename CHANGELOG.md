@@ -11,7 +11,8 @@
   1.3 s of CPU time and 0.3 s of wall time instead of 2.2 s. The encoder padding
   of the Ogg pages is now trimmed with Symphonia's gapless mode, so the decoded
   pool is a few frames shorter and the absolute sample offsets differ slightly
-  from earlier versions; the waveform itself is unchanged.
+  from earlier versions; a decoded sample differs from the `lewton` output by
+  at most one LSB, which is far below the resolution of the 16-bit pool.
 - Loading no longer rejects a SoundFont whose looping instrument regions have
   a reversed loop range (`start_loop >= end_loop`). Such a region is played
   once instead of being looped, so files that used to fail with
@@ -35,7 +36,9 @@
     `SoundFontError::InvalidInstrument` / `InvalidPreset` instead of
     panicking.
   - The declared size of a chunk is no longer trusted for the allocation, so a
-    corrupt file cannot abort the process by claiming gigabytes.
+    corrupt file cannot abort the process by claiming gigabytes: the `smpl`
+    chunk and every `pdta` sub-chunk reserve room only when the allocator can
+    provide it, and otherwise grow with the data that actually arrives.
   - The `ifil` and `iver` chunks consume their declared size, so the following
     chunk is read from the right offset.
   - A region whose loop is shorter than the distance the read position advances
