@@ -222,8 +222,11 @@ impl MidiFileSequencer {
 mod tests {
     use super::*;
 
+    #[cfg(not(target_family = "wasm"))]
     use std::sync::mpsc;
+    #[cfg(not(target_family = "wasm"))]
     use std::thread;
+    #[cfg(not(target_family = "wasm"))]
     use std::time::Duration;
 
     use crate::test_font::*;
@@ -238,8 +241,6 @@ mod tests {
 
     // A loop that starts and ends on the same tick used to rewind to the very
     // message being processed, so a single render call never returned (#57).
-    // The work runs on a thread so that a regression fails the test instead of
-    // hanging the test run forever.
     #[test]
     fn test_a_zero_length_loop_does_not_hang_the_sequencer() {
         let midi_file = Arc::new(
@@ -251,8 +252,7 @@ mod tests {
             .unwrap(),
         );
 
-        let (sender, receiver) = mpsc::channel();
-        thread::spawn(move || {
+        let render = move |midi_file: Arc<MidiFile>| {
             let mut sequencer = MidiFileSequencer::new(synthesizer());
             sequencer.play(&midi_file, true);
 
@@ -260,13 +260,27 @@ mod tests {
             let mut right = vec![0_f32; 512];
             sequencer.render(&mut left, &mut right);
 
-            sender.send(sequencer.end_of_sequence()).unwrap();
-        });
+            sequencer.end_of_sequence()
+        };
 
-        let end_of_sequence = receiver
-            .recv_timeout(Duration::from_secs(10))
-            .expect("the sequencer did not finish rendering");
-        assert!(end_of_sequence);
+        // The work runs on a thread so that a regression fails the test instead
+        // of hanging the test run forever, which is not an option where threads
+        // are not available.
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let (sender, receiver) = mpsc::channel();
+            thread::spawn(move || {
+                sender.send(render(midi_file)).unwrap();
+            });
+
+            let end_of_sequence = receiver
+                .recv_timeout(Duration::from_secs(10))
+                .expect("the sequencer did not finish rendering");
+            assert!(end_of_sequence);
+        }
+
+        #[cfg(target_family = "wasm")]
+        assert!(render(midi_file));
     }
 
     // A loop with a range still repeats: rendering must not fall through to

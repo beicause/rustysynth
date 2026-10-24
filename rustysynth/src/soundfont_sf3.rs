@@ -1,4 +1,5 @@
 use std::io::{Cursor, ErrorKind};
+#[cfg(not(target_family = "wasm"))]
 use std::thread;
 
 use symphonia_codec_vorbis::VorbisDecoder;
@@ -26,6 +27,10 @@ const GUARD_FRAMES: usize = 46;
 /// threads the wall clock stops improving while the CPU time grows (the decode
 /// becomes memory bound), so the count is capped rather than following
 /// `available_parallelism` all the way up.
+///
+/// WebAssembly targets have no threads to hand out, so they decode the samples
+/// one after another and do not need the cap.
+#[cfg(not(target_family = "wasm"))]
 const MAX_DECODE_THREADS: usize = 8;
 
 /// Decodes the concatenated Ogg Vorbis sample streams of a SoundFont3 into a
@@ -74,11 +79,24 @@ pub(crate) fn decode_vorbis_samples(
 
 /// Decodes the stream of every sample, in header order.
 ///
+/// WebAssembly targets have no threads, so they decode every sample on the
+/// calling thread.
+#[cfg(target_family = "wasm")]
+fn decode_samples(
+    smpl: &[u8],
+    sample_headers: &[SampleHeader],
+) -> Result<Vec<Vec<i16>>, SoundFontError> {
+    decode_samples_on_one_thread(smpl, sample_headers)
+}
+
+/// Decodes the stream of every sample, in header order.
+///
 /// The streams are independent of each other (a sample's byte range is relative
 /// to the compressed chunk, not to the decoded pool), so they are decoded on
 /// several threads, each taking a contiguous run of headers. The runs are
 /// collected back in header order, so the error returned is the one of the
 /// first failing sample, exactly as a sequential decode would report it.
+#[cfg(not(target_family = "wasm"))]
 fn decode_samples(
     smpl: &[u8],
     sample_headers: &[SampleHeader],
@@ -91,10 +109,7 @@ fn decode_samples(
         .min(count);
 
     if threads < 2 {
-        return sample_headers
-            .iter()
-            .map(|header| decode_sample(smpl, header))
-            .collect();
+        return decode_samples_on_one_thread(smpl, sample_headers);
     }
 
     let per_thread = count.div_ceil(threads);
@@ -125,6 +140,17 @@ fn decode_samples(
 
         Ok(samples)
     })
+}
+
+/// Decodes the stream of every sample, one after another, on the calling thread.
+fn decode_samples_on_one_thread(
+    smpl: &[u8],
+    sample_headers: &[SampleHeader],
+) -> Result<Vec<Vec<i16>>, SoundFontError> {
+    sample_headers
+        .iter()
+        .map(|header| decode_sample(smpl, header))
+        .collect()
 }
 
 /// Decodes the Ogg Vorbis stream of one sample.
