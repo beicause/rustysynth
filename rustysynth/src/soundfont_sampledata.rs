@@ -43,7 +43,13 @@ impl SoundFontSampleData {
             let size = BinaryReader::read_u32(reader)? as usize;
 
             match id.as_bytes() {
-                b"smpl" => sample_data = Some(BinaryReader::read_raw_data(reader, size)?),
+                b"smpl" => {
+                    if sample_data.is_some() {
+                        return Err(SoundFontError::InvalidSampleData);
+                    }
+
+                    sample_data = Some(BinaryReader::read_raw_data(reader, size)?)
+                }
                 b"sm24" => BinaryReader::discard_data(reader, size)?,
                 _ => return Err(SoundFontError::ListContainsUnknownId(id)),
             }

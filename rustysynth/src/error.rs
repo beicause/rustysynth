@@ -56,6 +56,7 @@ pub enum SoundFontError {
     },
     ListContainsUnknownId(FourCC),
     SampleDataNotFound,
+    InvalidSampleData,
     UnsupportedSampleFormat,
     SampleDecompressionFailed(String),
     SubChunkNotFound(FourCC),
@@ -109,6 +110,7 @@ impl fmt::Display for SoundFontError {
                 write!(f, "the INFO list contains an unknown ID '{id}'")
             }
             SoundFontError::SampleDataNotFound => write!(f, "no valid sample data was found"),
+            SoundFontError::InvalidSampleData => write!(f, "the sample data chunk is invalid"),
             SoundFontError::UnsupportedSampleFormat => write!(
                 f,
                 "SoundFont3 is not supported; rebuild rustysynth-ext with the 'sf3' feature enabled"
