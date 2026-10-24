@@ -40,6 +40,10 @@ impl BiQuadFilter {
         }
     }
 
+    pub(crate) fn is_active(&self) -> bool {
+        self.active
+    }
+
     pub(crate) fn clear_buffer(&mut self) {
         self.x1 = 0_f32;
         self.x2 = 0_f32;
@@ -121,6 +125,72 @@ impl BiQuadFilter {
             self.y2 = self.x2;
             self.y1 = self.x1;
         }
+    }
+
+    /// Processes the low-pass filters of four voices in lock step.
+    ///
+    /// A single filter is a chain of dependent multiply-adds: every output feeds
+    /// the next sample, which leaves the multiply-add unit idle for most of the
+    /// time it takes to produce a sample. Four independent filters interleaved
+    /// sample by sample keep it busy. The arithmetic of each filter is exactly
+    /// the arithmetic of `process`, so the results do not change.
+    pub(crate) fn process_four(
+        (f0, b0): (&mut BiQuadFilter, &mut [f32]),
+        (f1, b1): (&mut BiQuadFilter, &mut [f32]),
+        (f2, b2): (&mut BiQuadFilter, &mut [f32]),
+        (f3, b3): (&mut BiQuadFilter, &mut [f32]),
+    ) {
+        let a0 = [f0.a0, f1.a0, f2.a0, f3.a0];
+        let a1 = [f0.a1, f1.a1, f2.a1, f3.a1];
+        let a2 = [f0.a2, f1.a2, f2.a2, f3.a2];
+        let a3 = [f0.a3, f1.a3, f2.a3, f3.a3];
+        let a4 = [f0.a4, f1.a4, f2.a4, f3.a4];
+        let mut x1 = [f0.x1, f1.x1, f2.x1, f3.x1];
+        let mut x2 = [f0.x2, f1.x2, f2.x2, f3.x2];
+        let mut y1 = [f0.y1, f1.y1, f2.y1, f3.y1];
+        let mut y2 = [f0.y2, f1.y2, f2.y2, f3.y2];
+
+        let length = b0.len().min(b1.len()).min(b2.len()).min(b3.len());
+        let b0 = &mut b0[..length];
+        let b1 = &mut b1[..length];
+        let b2 = &mut b2[..length];
+        let b3 = &mut b3[..length];
+
+        for t in 0..length {
+            let x = [b0[t], b1[t], b2[t], b3[t]];
+
+            let mut y = [0_f32; 4];
+            for i in 0..4 {
+                y[i] = a0[i] * x[i] + a1[i] * x1[i] + a2[i] * x2[i] - a3[i] * y1[i] - a4[i] * y2[i];
+
+                x2[i] = x1[i];
+                x1[i] = x[i];
+                y2[i] = y1[i];
+                y1[i] = y[i];
+            }
+
+            b0[t] = y[0];
+            b1[t] = y[1];
+            b2[t] = y[2];
+            b3[t] = y[3];
+        }
+
+        f0.x1 = x1[0];
+        f0.x2 = x2[0];
+        f0.y1 = y1[0];
+        f0.y2 = y2[0];
+        f1.x1 = x1[1];
+        f1.x2 = x2[1];
+        f1.y1 = y1[1];
+        f1.y2 = y2[1];
+        f2.x1 = x1[2];
+        f2.x2 = x2[2];
+        f2.y1 = y1[2];
+        f2.y2 = y2[2];
+        f3.x1 = x1[3];
+        f3.x2 = x2[3];
+        f3.y1 = y1[3];
+        f3.y2 = y2[3];
     }
 
     fn set_coefficients(&mut self, a0: f32, a1: f32, a2: f32, b0: f32, b1: f32, b2: f32) {

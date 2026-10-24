@@ -186,7 +186,11 @@ impl Voice {
         self.note_gain = 0_f32;
     }
 
-    pub(crate) fn process(&mut self, data: &[i16], channels: &[Channel]) -> bool {
+    /// Advances the envelopes, the LFOs and the oscillator, and updates the
+    /// low-pass filter coefficients. The filter itself and the mix gains are
+    /// left to [`Voice::finish`], so that the caller can run the filters of
+    /// several voices together.
+    pub(crate) fn prepare(&mut self, data: &[i16], channels: &[Channel]) -> bool {
         if self.note_gain < SoundFontMath::NON_AUDIBLE {
             return false;
         }
@@ -227,12 +231,54 @@ impl Voice {
             self.filter
                 .set_low_pass_filter(self.smoothed_cutoff, self.resonance);
         }
-        self.filter.process(&mut self.block[..]);
+        true
+    }
 
+    /// Runs the low-pass filter of this voice over the block rendered by
+    /// [`Voice::prepare`].
+    pub(crate) fn process_filter(&mut self) {
+        self.filter.process(&mut self.block[..]);
+    }
+
+    /// Runs the low-pass filters of four voices in lock step.
+    ///
+    /// A single filter is a chain of dependent multiply-adds, which a
+    /// superscalar core cannot keep busy on its own. Four filters have four
+    /// independent chains, so interleaving them hides most of the latency. The
+    /// arithmetic of each filter is unchanged, so the output is unchanged too.
+    pub(crate) fn process_filters(voices: [&mut Voice; 4]) {
+        let [v0, v1, v2, v3] = voices;
+
+        if v0.filter_is_active()
+            && v1.filter_is_active()
+            && v2.filter_is_active()
+            && v3.filter_is_active()
+        {
+            BiQuadFilter::process_four(
+                (&mut v0.filter, v0.block.as_mut_slice()),
+                (&mut v1.filter, v1.block.as_mut_slice()),
+                (&mut v2.filter, v2.block.as_mut_slice()),
+                (&mut v3.filter, v3.block.as_mut_slice()),
+            );
+        } else {
+            // An inactive filter only records the last two samples of the
+            // block, which is far cheaper than the interleaved form.
+            v0.process_filter();
+            v1.process_filter();
+            v2.process_filter();
+            v3.process_filter();
+        }
+    }
+
+    /// Computes the mix gains and the effect sends of the block rendered by
+    /// [`Voice::prepare`], and records them as the new previous values.
+    pub(crate) fn finish(&mut self, channels: &[Channel]) {
         self.previous_mix_gain_left = self.current_mix_gain_left;
         self.previous_mix_gain_right = self.current_mix_gain_right;
         self.previous_reverb_send = self.current_reverb_send;
         self.previous_chorus_send = self.current_chorus_send;
+
+        let channel_info = &channels[self.channel as usize];
 
         // According to the GM spec, the following value should be squared.
         let ve = channel_info.get_volume() * channel_info.get_expression();
@@ -280,8 +326,6 @@ impl Voice {
         }
 
         self.voice_length += self.block.len();
-
-        true
     }
 
     fn release_if_necessary(&mut self, channel_info: &Channel) {
@@ -296,6 +340,10 @@ impl Voice {
 
             self.voice_state = VoiceState::Released;
         }
+    }
+
+    pub(crate) fn filter_is_active(&self) -> bool {
+        self.filter.is_active()
     }
 
     pub(crate) fn block(&self) -> &Vec<f32> {

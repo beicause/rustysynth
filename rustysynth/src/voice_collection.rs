@@ -69,20 +69,73 @@ impl VoiceCollection {
     }
 
     pub(crate) fn process(&mut self, data: &[i16], channels: &[Channel]) {
-        let mut i: usize = 0;
+        let alive = self.prepare_voices(data, channels);
 
-        loop {
-            if i == self.active_voice_count {
-                return;
-            }
-
-            if self.voices[i].process(data, channels) {
-                i += 1;
-            } else {
-                self.active_voice_count -= 1;
-                self.voices.swap(i, self.active_voice_count);
+        // A low-pass filter is a chain of dependent multiply-adds, so a single
+        // one cannot fill the multiply-add unit. The voices are filtered four at
+        // a time, which gives the core four independent chains to interleave.
+        let mut group = [0_usize; 4];
+        let mut in_group: usize = 0;
+        for i in 0..alive {
+            if self.voices[i].filter_is_active() {
+                group[in_group] = i;
+                in_group += 1;
+                if in_group == 4 {
+                    self.process_filter_group(group);
+                    in_group = 0;
+                }
             }
         }
+
+        for &i in &group[..in_group] {
+            self.voices[i].process_filter();
+        }
+
+        for i in 0..alive {
+            if !self.voices[i].filter_is_active() {
+                self.voices[i].process_filter();
+            }
+        }
+
+        for voice in self.voices[..alive].iter_mut() {
+            voice.finish(channels);
+        }
+    }
+
+    /// Renders a block for every active voice and drops the finished ones,
+    /// returning the number of voices left. The finished voices are removed with
+    /// the same swaps as a straightforward pass would use, so the remaining
+    /// voices keep the order they would have had.
+    fn prepare_voices(&mut self, data: &[i16], channels: &[Channel]) -> usize {
+        let mut count = self.active_voice_count;
+        let mut i: usize = 0;
+
+        while i < count {
+            if self.voices[i].prepare(data, channels) {
+                i += 1;
+            } else {
+                count -= 1;
+                self.voices.swap(i, count);
+            }
+        }
+
+        self.active_voice_count = count;
+        count
+    }
+
+    fn process_filter_group(&mut self, mut indices: [usize; 4]) {
+        indices.sort_unstable();
+        let [i0, i1, i2, i3] = indices;
+
+        let (head, tail) = self.voices.split_at_mut(i3);
+        let v3 = &mut tail[0];
+        let (head, tail) = head.split_at_mut(i2);
+        let v2 = &mut tail[0];
+        let (head, tail) = head.split_at_mut(i1);
+        let v1 = &mut tail[0];
+        let v0 = &mut head[i0];
+
+        Voice::process_filters([v0, v1, v2, v3]);
     }
 
     pub(crate) fn get_active_voices(&mut self) -> &mut [Voice] {
