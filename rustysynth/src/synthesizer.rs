@@ -364,21 +364,13 @@ impl Synthesizer {
         self.block_left.fill(0_f32);
         self.block_right.fill(0_f32);
         for voice in self.voices.get_active_voices().iter_mut() {
-            let previous_gain_left = self.master_volume * voice.previous_mix_gain_left;
-            let current_gain_left = self.master_volume * voice.current_mix_gain_left;
-            Synthesizer::write_block(
-                previous_gain_left,
-                current_gain_left,
+            Synthesizer::write_block_stereo(
+                self.master_volume * voice.previous_mix_gain_left,
+                self.master_volume * voice.current_mix_gain_left,
+                self.master_volume * voice.previous_mix_gain_right,
+                self.master_volume * voice.current_mix_gain_right,
                 voice.block(),
                 &mut self.block_left[..],
-                self.inverse_block_size,
-            );
-            let previous_gain_right = self.master_volume * voice.previous_mix_gain_right;
-            let current_gain_right = self.master_volume * voice.current_mix_gain_right;
-            Synthesizer::write_block(
-                previous_gain_right,
-                current_gain_right,
-                voice.block(),
                 &mut self.block_right[..],
                 self.inverse_block_size,
             );
@@ -393,22 +385,13 @@ impl Synthesizer {
             chorus_input_left.fill(0_f32);
             chorus_input_right.fill(0_f32);
             for voice in self.voices.get_active_voices().iter_mut() {
-                let previous_gain_left = voice.previous_chorus_send * voice.previous_mix_gain_left;
-                let current_gain_left = voice.current_chorus_send * voice.current_mix_gain_left;
-                Synthesizer::write_block(
-                    previous_gain_left,
-                    current_gain_left,
+                Synthesizer::write_block_stereo(
+                    voice.previous_chorus_send * voice.previous_mix_gain_left,
+                    voice.current_chorus_send * voice.current_mix_gain_left,
+                    voice.previous_chorus_send * voice.previous_mix_gain_right,
+                    voice.current_chorus_send * voice.current_mix_gain_right,
                     voice.block(),
                     chorus_input_left,
-                    self.inverse_block_size,
-                );
-                let previous_gain_right =
-                    voice.previous_chorus_send * voice.previous_mix_gain_right;
-                let current_gain_right = voice.current_chorus_send * voice.current_mix_gain_right;
-                Synthesizer::write_block(
-                    previous_gain_right,
-                    current_gain_right,
-                    voice.block(),
                     chorus_input_right,
                     self.inverse_block_size,
                 );
@@ -481,6 +464,106 @@ impl Synthesizer {
         } else {
             let step = inverse_block_size * (current_gain - previous_gain);
             ArrayMath::multiply_add_slope(previous_gain, step, source, destination);
+        }
+    }
+
+    /// Mixes the source into both channels in a single pass.
+    ///
+    /// Each channel is mixed exactly as [Synthesizer::write_block] would do on
+    /// its own, including the ramp when its gain changes over the block.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the two channels read naturally side by side"
+    )]
+    fn write_block_stereo(
+        previous_gain_left: f32,
+        current_gain_left: f32,
+        previous_gain_right: f32,
+        current_gain_right: f32,
+        source: &[f32],
+        destination_left: &mut [f32],
+        destination_right: &mut [f32],
+        inverse_block_size: f32,
+    ) {
+        let left_is_audible =
+            SoundFontMath::max(previous_gain_left, current_gain_left) >= SoundFontMath::NON_AUDIBLE;
+        let right_is_audible = SoundFontMath::max(previous_gain_right, current_gain_right)
+            >= SoundFontMath::NON_AUDIBLE;
+
+        match (left_is_audible, right_is_audible) {
+            (false, false) => {}
+            (true, false) => Synthesizer::write_block(
+                previous_gain_left,
+                current_gain_left,
+                source,
+                destination_left,
+                inverse_block_size,
+            ),
+            (false, true) => Synthesizer::write_block(
+                previous_gain_right,
+                current_gain_right,
+                source,
+                destination_right,
+                inverse_block_size,
+            ),
+            (true, true) => {
+                let left_step = Synthesizer::gain_step(
+                    previous_gain_left,
+                    current_gain_left,
+                    inverse_block_size,
+                );
+                let right_step = Synthesizer::gain_step(
+                    previous_gain_right,
+                    current_gain_right,
+                    inverse_block_size,
+                );
+
+                match (left_step, right_step) {
+                    (Some(left_step), Some(right_step)) => ArrayMath::multiply_add_slope_stereo(
+                        previous_gain_left,
+                        left_step,
+                        previous_gain_right,
+                        right_step,
+                        source,
+                        destination_left,
+                        destination_right,
+                    ),
+                    (None, None) => ArrayMath::multiply_add_stereo(
+                        current_gain_left,
+                        current_gain_right,
+                        source,
+                        destination_left,
+                        destination_right,
+                    ),
+                    (Some(left_step), None) => ArrayMath::multiply_add_slope_stereo(
+                        previous_gain_left,
+                        left_step,
+                        current_gain_right,
+                        0_f32,
+                        source,
+                        destination_left,
+                        destination_right,
+                    ),
+                    (None, Some(right_step)) => ArrayMath::multiply_add_slope_stereo(
+                        current_gain_left,
+                        0_f32,
+                        previous_gain_right,
+                        right_step,
+                        source,
+                        destination_left,
+                        destination_right,
+                    ),
+                }
+            }
+        }
+    }
+
+    /// Returns the per-sample gain increment, or None when the gain is constant.
+    fn gain_step(previous_gain: f32, current_gain: f32, inverse_block_size: f32) -> Option<f32> {
+        if (current_gain - previous_gain).abs() < 1.0E-3_f32 {
+            None
+        } else {
+            Some(inverse_block_size * (current_gain - previous_gain))
         }
     }
 
