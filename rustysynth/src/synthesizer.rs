@@ -347,10 +347,10 @@ impl Synthesizer {
             let dst_rem = left_length - wrote;
             let rem = cmp::min(src_rem, dst_rem);
 
-            for t in 0..rem {
-                left[wrote + t] = self.block_left[self.block_read + t];
-                right[wrote + t] = self.block_right[self.block_read + t];
-            }
+            left[wrote..wrote + rem]
+                .copy_from_slice(&self.block_left[self.block_read..self.block_read + rem]);
+            right[wrote..wrote + rem]
+                .copy_from_slice(&self.block_right[self.block_read..self.block_read + rem]);
 
             self.block_read += rem;
             wrote += rem;
