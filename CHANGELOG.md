@@ -1,5 +1,19 @@
 # Unreleased
 
+- Loading no longer rejects a SoundFont whose looping instrument regions have
+  a reversed loop range (`start_loop >= end_loop`). Such a region is played
+  once instead of being looped, so files that used to fail with
+  `SoundFontError::SanityCheckFailed` now load and sound
+  ([thanks to @wehrwolfmann](https://github.com/sinshu/rustysynth/pull/61)).
+- Reversed loop ranges are now ignored for regions that do not loop at all
+  ([thanks to @wehrwolfmann](https://github.com/sinshu/rustysynth/pull/60)).
+- Fixed the initial attenuation of an instrument being able to raise a note
+  above unity gain, which made those notes sound far too loud
+  ([thanks to @wehrwolfmann](https://github.com/sinshu/rustysynth/pull/59)).
+- A duplicate `smpl` sub-chunk is now rejected with
+  `SoundFontError::InvalidSampleData` instead of silently replacing the
+  previously read sample data (thanks to @Defkil).
+
 # v1.5.0-alpha.1
 
 - MIDI parsing now follows the SMF specification more closely:

@@ -1,6 +1,5 @@
 use std::io::Read;
 
-use crate::LoopMode;
 use crate::binary_reader::BinaryReader;
 use crate::error::SoundFontError;
 use crate::four_cc::FourCC;
@@ -505,5 +504,245 @@ mod tests {
             SoundFont::new(&mut file),
             Err(SoundFontError::SampleDataNotFound)
         ));
+    }
+
+    // A second smpl sub-chunk used to replace the first one silently.
+    #[test]
+    fn test_load_rejects_duplicate_sample_data_chunks() {
+        let bytes = build_sf2(&sample_spec(), 2);
+        let mut reader = std::io::Cursor::new(bytes);
+        assert!(matches!(
+            SoundFont::new(&mut reader),
+            Err(SoundFontError::InvalidSampleData)
+        ));
+    }
+
+    // A looping region with a reversed loop range used to fail the sanity
+    // check, which rejected the whole SoundFont. It must load now, keeping the
+    // loop points as they are (#55).
+    #[test]
+    fn test_load_accepts_an_invalid_loop_range() {
+        let mut spec = sample_spec();
+        spec.start_loop = 96;
+        spec.end_loop = 32;
+
+        let bytes = build_sf2(&spec, 1);
+        let mut reader = std::io::Cursor::new(bytes);
+        let sound_font = SoundFont::new(&mut reader).unwrap();
+
+        let region = &sound_font.get_instruments()[0].get_regions()[0];
+        assert_eq!(region.get_sample_start_loop(), 96);
+        assert_eq!(region.get_sample_end_loop(), 32);
+        assert_eq!(region.get_sample_modes(), crate::LoopMode::Continuous);
+    }
+
+    // The oscillator plays a region with a reversed loop range once instead of
+    // looping it, so the sound must stop while a looping region keeps sounding.
+    #[test]
+    fn test_invalid_loop_range_plays_once() {
+        let mut looping = sample_spec();
+        looping.end_loop = 96;
+        let mut reversed = sample_spec();
+        reversed.start_loop = 96;
+        reversed.end_loop = 32;
+
+        let looping_peak = render_tail_peak(build_sf2(&looping, 1));
+        let reversed_peak = render_tail_peak(build_sf2(&reversed, 1));
+
+        assert!(
+            looping_peak > 0.01,
+            "the looping region stopped sounding (tail peak {looping_peak})"
+        );
+        assert!(
+            reversed_peak < 1e-6,
+            "the reversed loop region kept sounding (tail peak {reversed_peak})"
+        );
+    }
+
+    // Renders a short note and returns the peak of its tail, by which time a
+    // region that stops after a single pass has fallen silent.
+    fn render_tail_peak(sound_font: Vec<u8>) -> f32 {
+        use std::sync::Arc;
+
+        use crate::{Synthesizer, SynthesizerSettings};
+
+        let mut reader = std::io::Cursor::new(sound_font);
+        let sound_font = Arc::new(SoundFont::new(&mut reader).unwrap());
+
+        let mut settings = SynthesizerSettings::new(44100);
+        settings.enable_reverb_and_chorus = false;
+        let mut synthesizer = Synthesizer::new(&sound_font, &settings).unwrap();
+        synthesizer.note_on(0, 60, 100);
+
+        // The sample is 128 frames long, so a region played once is already
+        // over by the tail of this buffer.
+        const FRAMES: usize = 4096;
+        let mut left = vec![0_f32; FRAMES];
+        let mut right = vec![0_f32; FRAMES];
+        synthesizer.render(&mut left, &mut right);
+
+        left[FRAMES - 1024..]
+            .iter()
+            .fold(0_f32, |peak, sample| peak.max(sample.abs()))
+    }
+
+    // The fixtures below are built in memory so that these tests do not depend
+    // on the sample SoundFonts, which are downloaded separately.
+
+    /// The single sample contained in a synthesized test SoundFont.
+    struct SampleSpec {
+        data: Vec<i16>,
+        start: i32,
+        end: i32,
+        start_loop: i32,
+        end_loop: i32,
+        modes: u16,
+    }
+
+    fn sample_spec() -> SampleSpec {
+        SampleSpec {
+            data: (0..256)
+                .map(|i| (((i * 37) % 2000) - 1000) as i16 * 8)
+                .collect(),
+            start: 0,
+            end: 128,
+            start_loop: 32,
+            end_loop: 96,
+            modes: 1, // LoopMode::Continuous
+        }
+    }
+
+    fn chunk(id: &[u8; 4], body: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(8 + body.len());
+        out.extend_from_slice(id);
+        out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        out.extend_from_slice(body);
+        out
+    }
+
+    fn list(form: &[u8; 4], sub_chunks: &[Vec<u8>]) -> Vec<u8> {
+        let mut body = form.to_vec();
+        for sub_chunk in sub_chunks {
+            body.extend_from_slice(sub_chunk);
+        }
+        chunk(b"LIST", &body)
+    }
+
+    fn name_field(name: &str) -> Vec<u8> {
+        let mut field = vec![0_u8; 20];
+        let bytes = name.as_bytes();
+        field[..bytes.len()].copy_from_slice(bytes);
+        field
+    }
+
+    // A phdr record: name, patch, bank, zone start, library, genre and
+    // morphology.
+    fn preset_info(name: &str, zone_start: u16) -> Vec<u8> {
+        let mut out = name_field(name);
+        out.extend_from_slice(&0_u16.to_le_bytes()); // patch number
+        out.extend_from_slice(&0_u16.to_le_bytes()); // bank number
+        out.extend_from_slice(&zone_start.to_le_bytes());
+        out.extend_from_slice(&0_i32.to_le_bytes()); // library
+        out.extend_from_slice(&0_i32.to_le_bytes()); // genre
+        out.extend_from_slice(&0_i32.to_le_bytes()); // morphology
+        out
+    }
+
+    // An inst record: name and zone start.
+    fn instrument_info(name: &str, zone_start: u16) -> Vec<u8> {
+        let mut out = name_field(name);
+        out.extend_from_slice(&zone_start.to_le_bytes());
+        out
+    }
+
+    // A pbag/ibag record: generator and modulator indexes.
+    fn zone_info(generator_index: u16) -> Vec<u8> {
+        let mut out = generator_index.to_le_bytes().to_vec();
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out
+    }
+
+    // A pgen/igen record: generator type and value.
+    fn generator(generator_type: u16, value: u16) -> Vec<u8> {
+        let mut out = generator_type.to_le_bytes().to_vec();
+        out.extend_from_slice(&value.to_le_bytes());
+        out
+    }
+
+    // An shdr record: name, start, end, loop start, loop end, sample rate,
+    // original pitch, pitch correction, link and sample type.
+    fn sample_header(sample: &SampleSpec) -> Vec<u8> {
+        let mut out = name_field("test_sample");
+        out.extend_from_slice(&sample.start.to_le_bytes());
+        out.extend_from_slice(&sample.end.to_le_bytes());
+        out.extend_from_slice(&sample.start_loop.to_le_bytes());
+        out.extend_from_slice(&sample.end_loop.to_le_bytes());
+        out.extend_from_slice(&44100_i32.to_le_bytes()); // sample rate
+        out.push(60); // original pitch
+        out.push(0); // pitch correction
+        out.extend_from_slice(&0_u16.to_le_bytes()); // link
+        out.extend_from_slice(&1_u16.to_le_bytes()); // sample type: mono
+        out
+    }
+
+    /// Builds the smallest SoundFont2 that loads successfully: one preset with
+    /// one instrument region that refers to the given sample. The smpl
+    /// sub-chunk is emitted `smpl_chunks` times, which is what the duplicate
+    /// chunk test needs.
+    ///
+    /// Both zone lists start with a global zone (no generators) and end with
+    /// their terminator record, so the actual instrumentation lives in a
+    /// single non-global zone.
+    fn build_sf2(sample: &SampleSpec, smpl_chunks: usize) -> Vec<u8> {
+        let sample_bytes: Vec<u8> = sample
+            .data
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect();
+
+        let info = list(b"INFO", &[chunk(b"ifil", &[2, 0, 0, 0])]);
+
+        let smpl = chunk(b"smpl", &sample_bytes);
+        let sdta = list(b"sdta", &vec![smpl; smpl_chunks]);
+
+        let phdr = chunk(
+            b"phdr",
+            &[preset_info("test_preset", 0), preset_info("", 2)].concat(),
+        );
+        let pbag = chunk(
+            b"pbag",
+            &[zone_info(0), zone_info(0), zone_info(1)].concat(),
+        );
+        let pgen = chunk(b"pgen", &[generator(41, 0), generator(0, 0)].concat());
+        let inst = chunk(
+            b"inst",
+            &[
+                instrument_info("test_instrument", 0),
+                instrument_info("", 2),
+            ]
+            .concat(),
+        );
+        let ibag = chunk(
+            b"ibag",
+            &[zone_info(0), zone_info(0), zone_info(2)].concat(),
+        );
+        let igen = chunk(
+            b"igen",
+            &[
+                generator(53, 0),            // sample id
+                generator(54, sample.modes), // sample modes
+                generator(0, 0),             // terminator
+            ]
+            .concat(),
+        );
+        let shdr = chunk(b"shdr", &[sample_header(sample), vec![0_u8; 46]].concat());
+
+        let pdta = list(b"pdta", &[phdr, pbag, pgen, inst, ibag, igen, shdr]);
+
+        let mut body = b"sfbk".to_vec();
+        body.extend_from_slice(&info);
+        body.extend_from_slice(&sdta);
+        body.extend_from_slice(&pdta);
+        chunk(b"RIFF", &body)
     }
 }
