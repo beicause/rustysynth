@@ -26,6 +26,13 @@ pub(crate) struct Oscillator {
     looping: bool,
 
     position_fp: i64,
+
+    // The pitch usually stays the same from block to block, but evaluating
+    // 2^(pitch / 12) for every block costs more than the whole oscillator loop
+    // for small blocks. The cached ratio is the exact value of the last pitch.
+    cached_pitch: f32,
+    cached_pitch_ratio_fp: i64,
+    cached_pitch_is_valid: bool,
 }
 
 impl Oscillator {
@@ -48,6 +55,9 @@ impl Oscillator {
             sample_rate_ratio: 0_f32,
             looping: false,
             position_fp: 0,
+            cached_pitch: 0_f32,
+            cached_pitch_ratio_fp: 0,
+            cached_pitch_is_valid: false,
         }
     }
 
@@ -83,6 +93,7 @@ impl Oscillator {
         // so the region plays once instead of reading past the loop (#55).
         self.looping = self.loop_mode != LoopMode::NoLoop && self.start_loop < self.end_loop;
         self.position_fp = (start as i64) << Oscillator::FRAC_BITS;
+        self.cached_pitch_is_valid = false;
     }
 
     pub(crate) fn release(&mut self) {
@@ -92,23 +103,29 @@ impl Oscillator {
     }
 
     pub(crate) fn process(&mut self, data: &[i16], block: &mut [f32], pitch: f32) -> bool {
-        let pitch_change = self.pitch_change_scale * (pitch - self.root_key as f32) + self.tune;
-        let pitch_ratio = self.sample_rate_ratio * 2_f32.powf(pitch_change / 12_f32);
-        self.fill_block(data, block, pitch_ratio as f64)
-    }
+        if !self.cached_pitch_is_valid || pitch != self.cached_pitch {
+            let pitch_change = self.pitch_change_scale * (pitch - self.root_key as f32) + self.tune;
+            let pitch_ratio = self.sample_rate_ratio * 2_f32.powf(pitch_change / 12_f32);
 
-    fn fill_block(&mut self, data: &[i16], block: &mut [f32], pitch_ratio: f64) -> bool {
-        // A pitch ratio that is zero, negative, not finite or absurdly large comes
-        // from a corrupt SoundFont. Such a ratio would stall, rewind or overflow the
-        // read position, so the voice is dropped instead of reading out of bounds.
-        // https://github.com/sinshu/rustysynth/issues/57
-        let ratio_limit = (i64::MAX / 2) as f64 / Oscillator::FRAC_UNIT as f64;
-        if pitch_ratio.is_nan() || pitch_ratio <= 0_f64 || pitch_ratio >= ratio_limit {
-            return false;
+            // A pitch ratio that is zero, negative, not finite or absurdly large comes
+            // from a corrupt SoundFont. Such a ratio would stall, rewind or overflow the
+            // read position, so the voice is dropped instead of reading out of bounds.
+            // https://github.com/sinshu/rustysynth/issues/57
+            let ratio_limit = (i64::MAX / 2) as f64 / Oscillator::FRAC_UNIT as f64;
+            let pitch_ratio_f64 = pitch_ratio as f64;
+            if pitch_ratio.is_nan() || pitch_ratio_f64 <= 0_f64 || pitch_ratio_f64 >= ratio_limit {
+                return false;
+            }
+
+            self.cached_pitch = pitch;
+            self.cached_pitch_ratio_fp = (Oscillator::FRAC_UNIT as f64 * pitch_ratio as f64) as i64;
+            self.cached_pitch_is_valid = true;
         }
 
-        let pitch_ratio_fp = (Oscillator::FRAC_UNIT as f64 * pitch_ratio) as i64;
+        self.fill_block(data, block, self.cached_pitch_ratio_fp)
+    }
 
+    fn fill_block(&mut self, data: &[i16], block: &mut [f32], pitch_ratio_fp: i64) -> bool {
         if self.looping {
             self.fill_block_continuous(data, block, pitch_ratio_fp)
         } else {

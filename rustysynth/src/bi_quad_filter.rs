@@ -19,6 +19,13 @@ pub(crate) struct BiQuadFilter {
     x2: f32,
     y1: f32,
     y2: f32,
+
+    // Recomputing the coefficients costs a cosine and a sine. Voices with a
+    // dynamic cutoff ask for them every block, but the cutoff only actually
+    // moves a little, so the input usually repeats what was already computed.
+    cached_cutoff: f32,
+    cached_resonance: f32,
+    coefficients_are_valid: bool,
 }
 
 impl BiQuadFilter {
@@ -37,6 +44,9 @@ impl BiQuadFilter {
             x2: 0_f32,
             y1: 0_f32,
             y2: 0_f32,
+            cached_cutoff: 0_f32,
+            cached_resonance: 0_f32,
+            coefficients_are_valid: false,
         }
     }
 
@@ -52,6 +62,15 @@ impl BiQuadFilter {
     }
 
     pub(crate) fn set_low_pass_filter(&mut self, cutoff_frequency: f32, resonance: f32) {
+        if self.coefficients_are_valid
+            && cutoff_frequency == self.cached_cutoff
+            && resonance == self.cached_resonance
+        {
+            return;
+        }
+
+        self.coefficients_are_valid = false;
+
         if cutoff_frequency < 0.499_f32 * self.sample_rate as f32 {
             self.active = true;
 
@@ -83,6 +102,10 @@ impl BiQuadFilter {
             let a2 = 1_f32 - alpha;
 
             self.set_coefficients(a0, a1, a2, b0, b1, b2);
+
+            self.cached_cutoff = cutoff_frequency;
+            self.cached_resonance = resonance;
+            self.coefficients_are_valid = true;
         } else {
             self.active = false;
         }
