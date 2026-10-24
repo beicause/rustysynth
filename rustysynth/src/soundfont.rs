@@ -519,6 +519,28 @@ mod tests {
         ));
     }
 
+    // The declared size of the `smpl` chunk is not trusted for the
+    // allocation either: a corrupt font can claim gigabytes and then end (#57).
+    #[test]
+    fn test_load_does_not_trust_the_declared_sample_size() {
+        let mut bytes = build_sf2(&sample_spec(), 1);
+
+        // The `smpl` chunk is the only one with a sample-sized body, so it is
+        // the chunk whose size field is rewritten.
+        let position = bytes
+            .windows(4)
+            .position(|window| window == b"smpl")
+            .unwrap();
+        bytes[position + 4..position + 8].copy_from_slice(&u32::MAX.to_le_bytes());
+
+        let mut reader = std::io::Cursor::new(bytes);
+        assert!(matches!(
+            SoundFont::new(&mut reader),
+            Err(SoundFontError::IoError(ref error))
+                if error.kind() == std::io::ErrorKind::UnexpectedEof
+        ));
+    }
+
     // A looping region with a reversed loop range used to fail the sanity
     // check, which rejected the whole SoundFont. It must load now, keeping the
     // loop points as they are (#55).

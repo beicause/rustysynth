@@ -91,13 +91,13 @@ impl SoundFontSampleData {
         reader.read_exact(&mut magic[..head])?;
 
         if head == magic.len() && magic == *b"OggS" {
-            let mut data: Vec<u8> = Vec::with_capacity(size);
+            let mut data: Vec<u8> = BinaryReader::reserve(size);
             data.extend_from_slice(&magic);
             BinaryReader::read_chunked(reader, size - head, |bytes| data.extend_from_slice(bytes))?;
             return Ok(RawSampleData::Compressed(data));
         }
 
-        let mut wave_data: Vec<i16> = Vec::with_capacity(size / 2);
+        let mut wave_data: Vec<i16> = BinaryReader::reserve(size / 2);
         // An odd-sized chunk is legal, at least for SoundFont3, so the trailing
         // byte of one read has to be paired with the head of the next one.
         let mut carry: Option<u8> = None;

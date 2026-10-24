@@ -30,7 +30,7 @@ impl Generator {
 
         let count = size / 4 - 1;
 
-        let mut generators: Vec<Generator> = Vec::with_capacity(count);
+        let mut generators: Vec<Generator> = BinaryReader::reserve(count);
         for _i in 0..count {
             generators.push(Generator::new(reader)?);
         }

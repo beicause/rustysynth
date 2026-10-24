@@ -34,7 +34,7 @@ impl ZoneInfo {
 
         let count = size / 4;
 
-        let mut zones: Vec<ZoneInfo> = Vec::with_capacity(count);
+        let mut zones: Vec<ZoneInfo> = BinaryReader::reserve(count);
         for _i in 0..count {
             zones.push(ZoneInfo::new(reader)?);
         }

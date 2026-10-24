@@ -47,7 +47,7 @@ impl PresetInfo {
 
         let count = size / 38;
 
-        let mut presets: Vec<PresetInfo> = Vec::with_capacity(count);
+        let mut presets: Vec<PresetInfo> = BinaryReader::reserve(count);
         for _i in 0..count {
             presets.push(PresetInfo::new(reader)?);
         }

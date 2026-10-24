@@ -130,6 +130,18 @@ impl BinaryReader {
         Ok(())
     }
 
+    /// Allocates room for `capacity` items if the allocator can provide it.
+    ///
+    /// The capacity of a chunk comes from the file, so a corrupt one can claim
+    /// gigabytes; trusting that number for an allocation aborts the process
+    /// when the allocation fails. A refused reservation leaves the buffer
+    /// empty, so it grows with the data that actually arrives instead.
+    pub(crate) fn reserve<T>(capacity: usize) -> Vec<T> {
+        let mut data: Vec<T> = Vec::new();
+        let _ = data.try_reserve_exact(capacity);
+        data
+    }
+
     /// Reads exactly `size` bytes and hands them to `sink` in chunks.
     ///
     /// The sample data of a SoundFont2 is little-endian 16-bit PCM, while a
@@ -236,6 +248,14 @@ mod tests {
         let data = BinaryReader::read_raw_data(&mut reader, 5).unwrap();
 
         assert_eq!(data, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_reserve_does_not_trust_an_impossible_capacity() {
+        let data: Vec<u8> = BinaryReader::reserve(usize::MAX / 2);
+
+        assert!(data.is_empty());
+        assert_eq!(data.capacity(), 0);
     }
 
     #[test]
