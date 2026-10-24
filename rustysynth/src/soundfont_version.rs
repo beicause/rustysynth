@@ -12,13 +12,18 @@ pub struct SoundFontVersion {
 }
 
 impl SoundFontVersion {
+    const SIZE: usize = 4;
+
     pub(crate) fn default() -> Self {
         Self { major: 0, minor: 0 }
     }
 
-    pub(crate) fn new<R: Read>(reader: &mut R) -> Result<Self, io::Error> {
+    /// Reads the two version numbers and skips whatever the chunk declares
+    /// beyond them, so that the following chunk is read at the right offset.
+    pub(crate) fn new<R: Read>(reader: &mut R, size: usize) -> Result<Self, io::Error> {
         let major = BinaryReader::read_i16(reader)?;
         let minor = BinaryReader::read_i16(reader)?;
+        BinaryReader::discard_data(reader, size.saturating_sub(Self::SIZE))?;
 
         Ok(Self { major, minor })
     }

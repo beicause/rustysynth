@@ -89,8 +89,7 @@ impl BinaryReader {
         reader: &mut R,
         length: usize,
     ) -> Result<String, io::Error> {
-        let mut data: Vec<u8> = vec![0; length];
-        reader.read_exact(&mut data)?;
+        let mut data: Vec<u8> = BinaryReader::read_raw_data(reader, length)?;
 
         let mut actual_length: usize = 0;
         for value in &data {
@@ -134,12 +133,102 @@ impl BinaryReader {
     /// SoundFont3 stores Ogg Vorbis streams instead, so the sample data chunk
     /// is read as raw bytes and interpreted later. Reading raw bytes also
     /// keeps odd-sized chunks (legal in SoundFont3) safe.
+    ///
+    /// The declared size is not trusted for the allocation: a corrupt file can
+    /// claim gigabytes and only provide a few bytes. The size is reserved up
+    /// front only when the allocator can provide it, which keeps large sample
+    /// banks readable in a single pass; otherwise the buffer grows with the
+    /// data that actually arrives.
     pub(crate) fn read_raw_data<R: Read>(
         reader: &mut R,
         size: usize,
     ) -> Result<Vec<u8>, io::Error> {
-        let mut data: Vec<u8> = vec![0; size];
-        reader.read_exact(&mut data)?;
+        const CHUNK: usize = 4096;
+
+        let mut data: Vec<u8> = Vec::new();
+
+        if data.try_reserve_exact(size).is_ok() {
+            data.resize(size, 0);
+            reader.read_exact(&mut data)?;
+            return Ok(data);
+        }
+
+        let mut buffer: [u8; CHUNK] = [0; CHUNK];
+        let mut remaining = size;
+
+        while remaining > 0 {
+            let count = cmp::min(remaining, CHUNK);
+            reader.read_exact(&mut buffer[..count])?;
+            data.extend_from_slice(&buffer[..count]);
+            remaining -= count;
+        }
+
         Ok(data)
+    }
+
+    /// Skips the pad byte that RIFF inserts after a chunk of an odd size.
+    ///
+    /// The pad byte is not included in the chunk size, so a reader that does
+    /// not skip it reads the following chunk header one byte off and reports a
+    /// bogus chunk ID.
+    /// <https://github.com/sinshu/rustysynth/issues/56>
+    pub(crate) fn skip_chunk_padding<R: Read>(
+        reader: &mut R,
+        size: usize,
+        bytes_left_in_list: usize,
+    ) -> Result<(), io::Error> {
+        // A file that ends right after an odd-sized chunk simply has no pad.
+        if !size.is_multiple_of(2) && bytes_left_in_list > 0 {
+            BinaryReader::read_u8(reader)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::io::Cursor;
+
+    // A corrupt file can claim a chunk of gigabytes while providing a few
+    // bytes. Trusting the declared size used to allocate it up front, which
+    // aborts the process when the allocation fails (#57).
+    #[test]
+    fn test_read_raw_data_does_not_trust_the_declared_size() {
+        let mut reader = Cursor::new(vec![0_u8; 8]);
+        let result = BinaryReader::read_raw_data(&mut reader, usize::MAX / 2);
+
+        assert!(matches!(
+            result,
+            Err(ref error) if error.kind() == ErrorKind::UnexpectedEof
+        ));
+    }
+
+    #[test]
+    fn test_read_raw_data_reads_the_requested_size() {
+        let mut reader = Cursor::new(vec![1_u8, 2, 3, 4, 5, 6]);
+        let data = BinaryReader::read_raw_data(&mut reader, 5).unwrap();
+
+        assert_eq!(data, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_skip_chunk_padding() {
+        // An odd sized chunk is followed by a pad byte.
+        let mut reader = Cursor::new(vec![0xAA, 0xBB]);
+        BinaryReader::skip_chunk_padding(&mut reader, 3, 4).unwrap();
+        assert_eq!(reader.position(), 1);
+
+        // An even sized chunk has no padding.
+        let mut reader = Cursor::new(vec![0xAA, 0xBB]);
+        BinaryReader::skip_chunk_padding(&mut reader, 4, 4).unwrap();
+        assert_eq!(reader.position(), 0);
+
+        // The last chunk of a list has no padding even when it is odd sized.
+        let mut reader = Cursor::new(vec![0xAA, 0xBB]);
+        BinaryReader::skip_chunk_padding(&mut reader, 3, 0).unwrap();
+        assert_eq!(reader.position(), 0);
     }
 }

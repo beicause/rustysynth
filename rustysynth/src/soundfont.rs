@@ -132,6 +132,8 @@ mod tests {
 
     use std::{fs::File, path::PathBuf};
 
+    use crate::test_font::*;
+
     fn samples_dir_path() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -559,6 +561,82 @@ mod tests {
         );
     }
 
+    // RIFF pads a chunk of an odd size with a byte that the chunk size does
+    // not count. A reader that does not skip the padding loses sync and takes
+    // the padding for the first byte of the next chunk id (#56).
+    #[test]
+    fn test_load_skips_padding_after_an_odd_sized_chunk() {
+        let builder = FontBuilder {
+            info_chunks: vec![
+                chunk(b"ifil", &[2, 0, 0, 0]),
+                padded_chunk(b"INAM", b"Odd"),
+                padded_chunk(b"ICMT", b"Odd comment"),
+            ],
+            pmod_bytes: Some(vec![0_u8; 6]),
+            ..FontBuilder::default()
+        };
+
+        let mut reader = std::io::Cursor::new(builder.build());
+        let sound_font = SoundFont::new(&mut reader).unwrap();
+
+        let info = sound_font.get_info();
+        assert_eq!(info.get_bank_name(), "Odd");
+        assert_eq!(info.get_comments(), "Odd comment");
+    }
+
+    // The version chunks used to read their two version numbers and leave the
+    // rest of the declared size in the reader, so the following chunk was read
+    // from the wrong offset (#57).
+    #[test]
+    fn test_load_reads_past_the_version_numbers() {
+        let builder = FontBuilder {
+            info_chunks: vec![
+                chunk(b"ifil", &[2, 0, 1, 0, 0x41, 0x41, 0x41, 0x41]),
+                chunk(b"INAM", b"Bank"),
+            ],
+            ..FontBuilder::default()
+        };
+
+        let mut reader = std::io::Cursor::new(builder.build());
+        let sound_font = SoundFont::new(&mut reader).unwrap();
+
+        let info = sound_font.get_info();
+        assert_eq!(info.get_version().get_major(), 2);
+        assert_eq!(info.get_version().get_minor(), 1);
+        assert_eq!(info.get_bank_name(), "Bank");
+    }
+
+    // A zone span past the end of the zone list used to index out of bounds
+    // instead of being reported as a broken instrument (#57).
+    #[test]
+    fn test_load_rejects_an_instrument_zone_past_the_zone_list() {
+        let builder = FontBuilder {
+            instrument_zone_end: 10,
+            ..FontBuilder::default()
+        };
+
+        let mut reader = std::io::Cursor::new(builder.build());
+        assert!(matches!(
+            SoundFont::new(&mut reader),
+            Err(SoundFontError::InvalidInstrument(0))
+        ));
+    }
+
+    // The same for presets (#57).
+    #[test]
+    fn test_load_rejects_a_preset_zone_past_the_zone_list() {
+        let builder = FontBuilder {
+            preset_zone_end: 10,
+            ..FontBuilder::default()
+        };
+
+        let mut reader = std::io::Cursor::new(builder.build());
+        assert!(matches!(
+            SoundFont::new(&mut reader),
+            Err(SoundFontError::InvalidPreset(0))
+        ));
+    }
+
     // Renders a short note and returns the peak of its tail, by which time a
     // region that stops after a single pass has fallen silent.
     fn render_tail_peak(sound_font: Vec<u8>) -> f32 {
@@ -584,165 +662,5 @@ mod tests {
         left[FRAMES - 1024..]
             .iter()
             .fold(0_f32, |peak, sample| peak.max(sample.abs()))
-    }
-
-    // The fixtures below are built in memory so that these tests do not depend
-    // on the sample SoundFonts, which are downloaded separately.
-
-    /// The single sample contained in a synthesized test SoundFont.
-    struct SampleSpec {
-        data: Vec<i16>,
-        start: i32,
-        end: i32,
-        start_loop: i32,
-        end_loop: i32,
-        modes: u16,
-    }
-
-    fn sample_spec() -> SampleSpec {
-        SampleSpec {
-            data: (0..256)
-                .map(|i| (((i * 37) % 2000) - 1000) as i16 * 8)
-                .collect(),
-            start: 0,
-            end: 128,
-            start_loop: 32,
-            end_loop: 96,
-            modes: 1, // LoopMode::Continuous
-        }
-    }
-
-    fn chunk(id: &[u8; 4], body: &[u8]) -> Vec<u8> {
-        let mut out = Vec::with_capacity(8 + body.len());
-        out.extend_from_slice(id);
-        out.extend_from_slice(&(body.len() as u32).to_le_bytes());
-        out.extend_from_slice(body);
-        out
-    }
-
-    fn list(form: &[u8; 4], sub_chunks: &[Vec<u8>]) -> Vec<u8> {
-        let mut body = form.to_vec();
-        for sub_chunk in sub_chunks {
-            body.extend_from_slice(sub_chunk);
-        }
-        chunk(b"LIST", &body)
-    }
-
-    fn name_field(name: &str) -> Vec<u8> {
-        let mut field = vec![0_u8; 20];
-        let bytes = name.as_bytes();
-        field[..bytes.len()].copy_from_slice(bytes);
-        field
-    }
-
-    // A phdr record: name, patch, bank, zone start, library, genre and
-    // morphology.
-    fn preset_info(name: &str, zone_start: u16) -> Vec<u8> {
-        let mut out = name_field(name);
-        out.extend_from_slice(&0_u16.to_le_bytes()); // patch number
-        out.extend_from_slice(&0_u16.to_le_bytes()); // bank number
-        out.extend_from_slice(&zone_start.to_le_bytes());
-        out.extend_from_slice(&0_i32.to_le_bytes()); // library
-        out.extend_from_slice(&0_i32.to_le_bytes()); // genre
-        out.extend_from_slice(&0_i32.to_le_bytes()); // morphology
-        out
-    }
-
-    // An inst record: name and zone start.
-    fn instrument_info(name: &str, zone_start: u16) -> Vec<u8> {
-        let mut out = name_field(name);
-        out.extend_from_slice(&zone_start.to_le_bytes());
-        out
-    }
-
-    // A pbag/ibag record: generator and modulator indexes.
-    fn zone_info(generator_index: u16) -> Vec<u8> {
-        let mut out = generator_index.to_le_bytes().to_vec();
-        out.extend_from_slice(&0_u16.to_le_bytes());
-        out
-    }
-
-    // A pgen/igen record: generator type and value.
-    fn generator(generator_type: u16, value: u16) -> Vec<u8> {
-        let mut out = generator_type.to_le_bytes().to_vec();
-        out.extend_from_slice(&value.to_le_bytes());
-        out
-    }
-
-    // An shdr record: name, start, end, loop start, loop end, sample rate,
-    // original pitch, pitch correction, link and sample type.
-    fn sample_header(sample: &SampleSpec) -> Vec<u8> {
-        let mut out = name_field("test_sample");
-        out.extend_from_slice(&sample.start.to_le_bytes());
-        out.extend_from_slice(&sample.end.to_le_bytes());
-        out.extend_from_slice(&sample.start_loop.to_le_bytes());
-        out.extend_from_slice(&sample.end_loop.to_le_bytes());
-        out.extend_from_slice(&44100_i32.to_le_bytes()); // sample rate
-        out.push(60); // original pitch
-        out.push(0); // pitch correction
-        out.extend_from_slice(&0_u16.to_le_bytes()); // link
-        out.extend_from_slice(&1_u16.to_le_bytes()); // sample type: mono
-        out
-    }
-
-    /// Builds the smallest SoundFont2 that loads successfully: one preset with
-    /// one instrument region that refers to the given sample. The smpl
-    /// sub-chunk is emitted `smpl_chunks` times, which is what the duplicate
-    /// chunk test needs.
-    ///
-    /// Both zone lists start with a global zone (no generators) and end with
-    /// their terminator record, so the actual instrumentation lives in a
-    /// single non-global zone.
-    fn build_sf2(sample: &SampleSpec, smpl_chunks: usize) -> Vec<u8> {
-        let sample_bytes: Vec<u8> = sample
-            .data
-            .iter()
-            .flat_map(|value| value.to_le_bytes())
-            .collect();
-
-        let info = list(b"INFO", &[chunk(b"ifil", &[2, 0, 0, 0])]);
-
-        let smpl = chunk(b"smpl", &sample_bytes);
-        let sdta = list(b"sdta", &vec![smpl; smpl_chunks]);
-
-        let phdr = chunk(
-            b"phdr",
-            &[preset_info("test_preset", 0), preset_info("", 2)].concat(),
-        );
-        let pbag = chunk(
-            b"pbag",
-            &[zone_info(0), zone_info(0), zone_info(1)].concat(),
-        );
-        let pgen = chunk(b"pgen", &[generator(41, 0), generator(0, 0)].concat());
-        let inst = chunk(
-            b"inst",
-            &[
-                instrument_info("test_instrument", 0),
-                instrument_info("", 2),
-            ]
-            .concat(),
-        );
-        let ibag = chunk(
-            b"ibag",
-            &[zone_info(0), zone_info(0), zone_info(2)].concat(),
-        );
-        let igen = chunk(
-            b"igen",
-            &[
-                generator(53, 0),            // sample id
-                generator(54, sample.modes), // sample modes
-                generator(0, 0),             // terminator
-            ]
-            .concat(),
-        );
-        let shdr = chunk(b"shdr", &[sample_header(sample), vec![0_u8; 46]].concat());
-
-        let pdta = list(b"pdta", &[phdr, pbag, pgen, inst, ibag, igen, shdr]);
-
-        let mut body = b"sfbk".to_vec();
-        body.extend_from_slice(&info);
-        body.extend_from_slice(&sdta);
-        body.extend_from_slice(&pdta);
-        chunk(b"RIFF", &body)
     }
 }

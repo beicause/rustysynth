@@ -53,6 +53,12 @@ impl SoundFontSampleData {
                 b"sm24" => BinaryReader::discard_data(reader, size)?,
                 _ => return Err(SoundFontError::ListContainsUnknownId(id)),
             }
+
+            BinaryReader::skip_chunk_padding(
+                reader,
+                size,
+                end.saturating_sub(reader.bytes_read()),
+            )?;
         }
 
         sample_data.ok_or(SoundFontError::SampleDataNotFound)

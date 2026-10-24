@@ -47,6 +47,9 @@ mod midifile_sequencer;
 mod chorus;
 mod reverb;
 
+#[cfg(test)]
+mod test_font;
+
 pub use self::error::MidiFileError;
 pub use self::error::SoundFontError;
 pub use self::error::SynthesizerError;

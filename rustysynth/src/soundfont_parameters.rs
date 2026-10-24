@@ -72,6 +72,12 @@ impl SoundFontParameters {
                 b"shdr" => sample_headers = Some(SampleHeader::read_from_chunk(reader, size)?),
                 _ => return Err(SoundFontError::ListContainsUnknownId(id)),
             }
+
+            BinaryReader::skip_chunk_padding(
+                reader,
+                size,
+                end.saturating_sub(reader.bytes_read()),
+            )?;
         }
 
         let preset_infos = preset_infos.ok_or(SoundFontError::SubChunkNotFound(

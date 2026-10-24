@@ -58,14 +58,14 @@ impl SoundFontInfo {
             let size = BinaryReader::read_u32(reader)? as usize;
 
             match id.as_bytes() {
-                b"ifil" => version = Some(SoundFontVersion::new(reader)?),
+                b"ifil" => version = Some(SoundFontVersion::new(reader, size)?),
                 b"isng" => {
                     target_sound_engine =
                         Some(BinaryReader::read_fixed_length_string(reader, size)?)
                 }
                 b"INAM" => bank_name = Some(BinaryReader::read_fixed_length_string(reader, size)?),
                 b"irom" => rom_name = Some(BinaryReader::read_fixed_length_string(reader, size)?),
-                b"iver" => rom_version = Some(SoundFontVersion::new(reader)?),
+                b"iver" => rom_version = Some(SoundFontVersion::new(reader, size)?),
                 b"ICRD" => {
                     creation_date = Some(BinaryReader::read_fixed_length_string(reader, size)?)
                 }
@@ -78,6 +78,12 @@ impl SoundFontInfo {
                 b"ISFT" => tools = Some(BinaryReader::read_fixed_length_string(reader, size)?),
                 _ => return Err(SoundFontError::ListContainsUnknownId(id)),
             }
+
+            BinaryReader::skip_chunk_padding(
+                reader,
+                size,
+                end.saturating_sub(reader.bytes_read()),
+            )?;
         }
 
         let version = version.unwrap_or_else(SoundFontVersion::default);

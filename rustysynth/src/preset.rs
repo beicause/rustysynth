@@ -32,8 +32,12 @@ impl Preset {
         }
 
         let span_start = info.zone_start_index as usize;
-        let span_end = span_start + zone_count as usize;
-        let zone_span = &zones[span_start..span_end];
+        let Some(span_end) = span_start.checked_add(zone_count as usize) else {
+            return Err(SoundFontError::InvalidPreset(preset_id));
+        };
+        let Some(zone_span) = zones.get(span_start..span_end) else {
+            return Err(SoundFontError::InvalidPreset(preset_id));
+        };
         let regions = PresetRegion::create(preset_id, zone_span, instruments)?;
 
         Ok(Self {
