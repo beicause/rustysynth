@@ -13,6 +13,9 @@ resolver = "3"
 [workspace.lints.clippy]
 allow_attributes = "warn"
 allow_attributes_without_reason = "warn"
+# One module layout style only: a module lives in a file named after it
+# (`src/foo.rs`), never in `src/foo/mod.rs`.
+mod_module_files = "deny"
 
 # Compile test binaries with opt-level 1 by default, so that the heavier
 # test data (e.g. the SoundFont3 decode of FluidR3Mono_GM.sf3) runs fast.
